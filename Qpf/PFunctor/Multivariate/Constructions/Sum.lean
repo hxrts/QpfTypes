@@ -54,8 +54,7 @@ def equiv {Γ} : Sum' Γ ≃ QpfSum' Γ :=
     rcases x with ⟨(i : PFin2 _), f⟩
     dsimp only [box, unbox, inl, inr]
     fin_cases i <;> {
-      simp only [Function.Embedding.coeFn_mk, PFin2.ofFin2_fs, PFin2.ofFin2_fz,
-        Nat.rec_zero]
+      simp only [Function.Embedding.coeFn_mk, PFin2.ofFin2_fs, PFin2.ofFin2_fz]
       apply congrArg
       funext i; fin_cases i <;> (funext (j : PFin2 _); fin_cases j)
       rfl

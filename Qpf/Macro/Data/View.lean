@@ -91,6 +91,7 @@ def DataView.asInductive (view : DataView) : InductiveView
     isClass := false
     allowIndices := false
     allowSortPolymorphism := false
+    docString? := none
   }
 
 
@@ -194,19 +195,18 @@ instance : ToMessageData DataView where
 }"
 
 
-@[deprecated]
-def CtorView.debug (ctor: CtorView) : String :=
-  (s!"\{
+private def CtorView.toStringImpl (ctor: CtorView) : String :=
+  s!"\{
   modifiers := {ctor.modifiers},
   declName  := {ctor.declName},
   binders   := {ctor.binders},
   type?     := {ctor.type?},
-}")
+}"
 
-@[deprecated]
-def DataView.debug (view : DataView) : String :=
-  let ctors := view.ctors.map CtorView.debug
-s!"\{
+instance : ToString DataView where
+  toString view :=
+    let ctors := view.ctors.map CtorView.toStringImpl
+    s!"\{
   declId          := {view.declId},
   modifiers       := {view.modifiers},
   ref             := {view.ref             },
@@ -224,10 +224,6 @@ s!"\{
   deadBinders     := {view.deadBinders     },
   deadBinderNames := {view.deadBinderNames },
 }"
-
-instance : ToString (DataView) := ⟨
-  fun view => view.debug
-⟩
 
 
 /-
@@ -273,7 +269,9 @@ def dataSyntaxToView (modifiers : Modifiers) (decl : Syntax) : CommandElabM Data
   let (binders, type?) := expandOptDeclSig decl[2]
 
   let declId  : TSyntax ``declId := ⟨decl[1]⟩
-  let ⟨name, declName, levelNames⟩ ← expandDeclId (← getCurrNamespace) (← getLevelNames) declId modifiers
+  let ns ← getCurrNamespace
+  let ⟨name, declName, levelNames, _docString?⟩ ← liftTermElabM do
+    Term.expandDeclId ns (← Term.getLevelNames) declId modifiers
   -- addDeclarationRanges declName decl
   let ctors      ← decl[4].getArgs.mapM fun ctor => withRef ctor do
     /-
@@ -285,7 +283,7 @@ def dataSyntaxToView (modifiers : Modifiers) (decl : Syntax) : CommandElabM Data
     if let some leadingDocComment := ctor[0].getOptional? then
       if ctorModifiers.docString?.isSome then
         logErrorAt leadingDocComment "duplicate doc string"
-      ctorModifiers := { ctorModifiers with docString? := some ⟨leadingDocComment⟩ }
+      ctorModifiers := { ctorModifiers with docString? := some (⟨leadingDocComment⟩, false) }
     if ctorModifiers.isPrivate && modifiers.isPrivate then
       throwError "invalid 'private' constructor in a 'private' inductive datatype"
     if ctorModifiers.isProtected && modifiers.isPrivate then
@@ -294,9 +292,10 @@ def dataSyntaxToView (modifiers : Modifiers) (decl : Syntax) : CommandElabM Data
     let ctorName := ctor.getIdAt 3
     let ctorName := declName ++ ctorName
     let ctorName ← withRef ctor[3] <| applyVisibility ctorModifiers ctorName
-    let (binders, type?) := expandOptDeclSig ctor[4]
-    addDocString' ctorName ctorModifiers.docString?
-    return { ref := ctor, declId := ctor[3], modifiers := ctorModifiers, declName := ctorName, binders := binders, type? := type? : CtorView }
+    let (ctorBinders, type?) := expandOptDeclSig ctor[4]
+    if let some (doc, _) := ctorModifiers.docString? then
+      liftTermElabM <| addDocString ctorName ctorBinders doc
+    return { ref := ctor, declId := ctor[3], modifiers := ctorModifiers, declName := ctorName, binders := ctorBinders, type? := type? : CtorView }
   let classes ← liftCoreM <| getOptDerivingClasses decl[5]
 
 

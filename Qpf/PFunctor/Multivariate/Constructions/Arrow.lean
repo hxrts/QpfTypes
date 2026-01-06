@@ -23,13 +23,14 @@ namespace Arrow
   instance : MvFunctor (QpfArrow' x) := by unfold QpfArrow'; infer_instance
   instance : MvQPF (QpfArrow' x) := by unfold QpfArrow'; infer_instance
 
+  set_option linter.dupNamespace false in
   abbrev Arrow (x : Type u) : CurriedTypeFun 1
     := (x → ·)
 
   abbrev Arrow' (x : Type u) : TypeFun 1
     := TypeFun.ofCurried (Arrow x)
 
-
+  set_option linter.dupNamespace false in
   theorem Arrow.eta {α β : Type u} :
     (α → β) = Arrow α β :=
   rfl

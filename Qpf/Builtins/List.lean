@@ -60,7 +60,7 @@ instance : MvQPF List' :=
         · intro i
           fin_cases i
           apply HEq.trans Vec.ofList_toList_iso'
-          simp only [Eq.ndrec, id_eq, eq_mpr_eq_cast, PFin2.toFin2_ofFin2]
+          simp only [PFin2.toFin2_ofFin2]
           apply HEq.trans cast_fun_arg
           rfl
 
@@ -69,9 +69,10 @@ instance : MvQPF List' :=
         funext i
         fin_cases i
 
-        simp only [ListPFunctor, TypeVec.Arrow, DVec];
+        set_option linter.unusedSimpArgs false in
+        simp only [ListPFunctor, TypeVec.Arrow, DVec]
         have : List.length (unbox { fst := { down := n }, snd := v }) = n := by simp
-        simp[this]
+        simp [this]
 
       case H₄ => intros; rfl
   ) (
