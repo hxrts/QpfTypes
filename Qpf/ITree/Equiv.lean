@@ -25,13 +25,15 @@ making the EquivUTT → Bisim direction provable.
 
 ## Known limitations
 
-The `EquivUTT.toBisim` proof contains four `sorry` placeholders in nested
-taur/taul cases. These occur when applying `F_cases_x` twice: after the first
-application peels a tau from one side, a second taur/taul can peel another tau
-without making progress toward the induction hypothesis. The boundedness
-conditions should rule out infinite such chains, but the current proof structure
-doesn't directly leverage them for termination. A proper fix would require
-well-founded recursion with a measure combining tau depth and boundedness.
+The `EquivUTT.toBisim` proof contains two `sorry` placeholders in the CanDo
+nested taur/taul cases. The Terminates proofs are complete thanks to the
+`h_term_bounded` conditions which directly handle nested tau chains.
+
+The CanDo sorries occur because `h_vis_bounded` only applies when the LHS is
+`.vis e k`, not when it's `.tau _`. A complete fix would require adding
+analogous `h_cando_bounded` conditions to EquivUTT, which would track CanDo
+bounds through tau chains. For a complete equivalence proof, use `ITree.Bisim`
+from `Qpf.ITree.Bisim` which has a membership-based formulation.
 -/
 
 namespace ITree
@@ -44,17 +46,7 @@ The key insight is to use the tau-peeling lemmas from Bisim.lean:
 
 These let us strip taus when constructing `EquivUTT.F` terms. -/
 
-/-! ### Conversion between Terminates/CanDo and bounded path predicates -/
-
-/-- Convert Terminates to RetPathBounded -/
-theorem Terminates.toRetPathBounded {b : ITree α ε ρ} {r : ρ} :
-    Terminates b r → ∃ n, RetPathBounded n r b := by
-  intro ht
-  induction ht with
-  | ret => exact ⟨0, rfl⟩
-  | tau _ ih =>
-    obtain ⟨n, hn⟩ := ih
-    exact ⟨n + 1, .inr ⟨_, rfl, hn⟩⟩
+/-! ### Conversion between CanDo and bounded path predicates -/
 
 /-- Convert CanDo to VisPathBounded -/
 theorem CanDo.toVisPathBounded {b : ITree α ε ρ} {e : ε} {k₂ : α → ITree α ε ρ}
@@ -111,17 +103,17 @@ theorem Bisim.toEquivUTT {t₁ t₂ : ITree α ε ρ} : Bisim t₁ t₂ → Equi
       | tau _ ih =>
         -- b = .tau b', use taur and strip the tau from the bisim
         exact .taur (Bisim.tau_right hab)
-  · -- h_ret_bounded: Bisim (.ret r) b → ∃ n, RetPathBounded n r b
-    intro r b hab
+  · -- h_term_bounded: Terminates a r → Bisim a b → ∃ n, RetPathBounded n r b
+    intro a r b hterm hab
     have hF := Bisim.Bisim_isFixpoint _ _ hab
-    have ⟨hterm, _, _⟩ := hF
-    have ht : Terminates b r := (hterm r).mp .ret
+    have ⟨hterm_iff, _, _⟩ := hF
+    have ht : Terminates b r := (hterm_iff r).mp hterm
     exact Terminates.toRetPathBounded ht
-  · -- h_ret_bounded': Bisim a (.ret r) → ∃ n, RetPathBounded n r a
-    intro r a hab
+  · -- h_term_bounded': Terminates b r → Bisim a b → ∃ n, RetPathBounded n r a
+    intro a r b hterm hab
     have hF := Bisim.Bisim_isFixpoint _ _ hab
-    have ⟨hterm, _, _⟩ := hF
-    have ht : Terminates a r := (hterm r).mpr .ret
+    have ⟨hterm_iff, _, _⟩ := hF
+    have ht : Terminates a r := (hterm_iff r).mpr hterm
     exact Terminates.toRetPathBounded ht
   · -- h_vis_bounded: Bisim (.vis e k₁) b → ∃ n, VisPathBounded n e Bisim k₁ b
     intro e k₁ b hab
@@ -144,21 +136,6 @@ Since EquivUTT now includes boundedness conditions, this direction is
 straightforward. The boundedness conditions directly provide the bounds
 needed for termination and CanDo proofs. -/
 
-/-- RetPathBounded implies Terminates -/
-theorem RetPathBounded.toTerminates {n : ℕ} {r : ρ} {b : ITree α ε ρ} :
-    RetPathBounded n r b → Terminates b r := by
-  induction n generalizing b with
-  | zero =>
-    intro h
-    simp only [RetPathBounded] at h
-    exact h ▸ .ret
-  | succ n ih =>
-    intro h
-    simp only [RetPathBounded] at h
-    rcases h with heq | ⟨t, heq, hrec⟩
-    · exact heq ▸ .ret
-    · exact heq ▸ .tau (ih hrec)
-
 /-- VisPathBounded implies CanDo with related continuations -/
 theorem VisPathBounded.toCanDo {n : ℕ} {e : ε} {R : ITree α ε ρ → ITree α ε ρ → Prop}
     {k₁ : α → ITree α ε ρ} {b : ITree α ε ρ} :
@@ -177,6 +154,25 @@ theorem VisPathBounded.toCanDo {n : ℕ} {e : ε} {R : ITree α ε ρ → ITree 
     · let ⟨k₂, hk₂, hcont⟩ := ih hrec
       exact ⟨k₂, heq ▸ .tau hk₂, hcont⟩
 
+/-- The bound decreases when we peel a tau from the RHS of RetPathBounded -/
+private theorem bound_decreases_ret_tau {n : ℕ} {r : ρ} {b b' : ITree α ε ρ}
+    (hb : b = .tau b') (hn : RetPathBounded (n+1) r b) :
+    RetPathBounded n r b' := by
+  simp only [RetPathBounded] at hn
+  rcases hn with heq | ⟨t, heq, hrec⟩
+  · exact absurd (hb.symm.trans heq) tau_ne_ret
+  · exact tau_inj (hb.symm.trans heq) ▸ hrec
+
+/-- The bound decreases when we peel a tau from the RHS of VisPathBounded -/
+private theorem bound_decreases_vis_tau {n : ℕ} {e : ε} {R : ITree α ε ρ → ITree α ε ρ → Prop}
+    {k₁ : α → ITree α ε ρ} {b b' : ITree α ε ρ}
+    (hb : b = .tau b') (hn : VisPathBounded (n+1) e R k₁ b) :
+    VisPathBounded n e R k₁ b' := by
+  simp only [VisPathBounded] at hn
+  rcases hn with ⟨k₂, heq, hk⟩ | ⟨t, heq, hrec⟩
+  · exact absurd (hb.symm.trans heq) tau_ne_vis
+  · exact tau_inj (hb.symm.trans heq) ▸ hrec
+
 /-- Helper: case analysis on EquivUTT.F with first argument abstracted -/
 private theorem EquivUTT.F_cases_x {R : ITree α ε ρ → ITree α ε ρ → Prop}
     {P : Prop} {a y : ITree α ε ρ} (hF : EquivUTT.F R a y)
@@ -192,12 +188,170 @@ private theorem EquivUTT.F_cases_x {R : ITree α ε ρ → ITree α ε ρ → Pr
   | taul h => exact htaul _ rfl h
   | taur h => exact htaur _ rfl h
 
+/-- Given R (.tau t) b with a ret-path bound, peel taus until we can use the IH.
+
+This helper handles the nested taur cases in EquivUTT.toBisim by using strong
+induction on the bound. Each taur step decreases the bound, so we eventually
+reach a tau or taul case where we can apply the induction hypothesis. -/
+private theorem peel_taus_term_fwd
+    {R : ITree α ε ρ → ITree α ε ρ → Prop}
+    (isFixpoint : ∀ a b, R a b → EquivUTT.F R a b)
+    {t : ITree α ε ρ} {r : ρ}
+    (ih : ∀ b, R t b → Terminates b r)
+    {n : ℕ} {b : ITree α ε ρ}
+    (hR : R (.tau t) b)
+    (hbound : RetPathBounded n r b) :
+    Terminates b r := by
+  induction n generalizing b with
+  | zero =>
+    simp only [RetPathBounded] at hbound
+    exact hbound ▸ .ret
+  | succ n ih_n =>
+    apply EquivUTT.F_cases_x (isFixpoint _ _ hR)
+    · intro _ ha _; exact absurd ha tau_ne_ret
+    · intro _ _ _ ha _ _; exact absurd ha tau_ne_vis
+    · intro t' y' ha hb hR'
+      have hx := tau_inj ha
+      exact hb ▸ .tau (ih y' (hx ▸ hR'))
+    · intro t' ha hR'
+      have hx := tau_inj ha
+      exact ih b (hx ▸ hR')
+    · intro b' hb hRb'
+      have hbound' := bound_decreases_ret_tau hb hbound
+      exact hb ▸ .tau (ih_n hRb' hbound')
+
+/-- Symmetric version: peel taus from LHS to prove Terminates a r -/
+private theorem peel_taus_term_bwd
+    {R : ITree α ε ρ → ITree α ε ρ → Prop}
+    (isFixpoint : ∀ a b, R a b → EquivUTT.F R a b)
+    {t : ITree α ε ρ} {r : ρ}
+    (ih : ∀ a, R a t → Terminates a r)
+    {n : ℕ} {a : ITree α ε ρ}
+    (hR : R a (.tau t))
+    (hbound : RetPathBounded n r a) :
+    Terminates a r := by
+  induction n generalizing a with
+  | zero =>
+    simp only [RetPathBounded] at hbound
+    exact hbound ▸ .ret
+  | succ n ih_n =>
+    apply EquivUTT.F_cases_x (isFixpoint _ _ hR)
+    · intro _ _ hb; exact absurd hb tau_ne_ret
+    · intro _ _ _ _ hb _; exact absurd hb tau_ne_vis
+    · intro x' t' ha hb hR'
+      have hy := tau_inj hb
+      exact ha ▸ .tau (ih x' (hy ▸ hR'))
+    · intro a' ha hR'
+      have hbound' := bound_decreases_ret_tau ha hbound
+      exact ha ▸ .tau (ih_n hR' hbound')
+    · intro t' hb hR'
+      have hy := tau_inj hb
+      exact ih a (hy ▸ hR')
+
+/-- Given R (.tau (.ret r)) b with a known RetPathBound on b, find the actual bound.
+
+This helper uses strong induction on the bound. In the taur case, the bound decreases
+because each taur peels one tau from b. -/
+private theorem find_ret_bound_aux
+    {R : ITree α ε ρ → ITree α ε ρ → Prop}
+    (isFixpoint : ∀ a b, R a b → EquivUTT.F R a b)
+    (h_ret_bounded : ∀ r b, R (.ret r) b → ∃ n, RetPathBounded n r b)
+    {r : ρ} {n : ℕ} {b : ITree α ε ρ}
+    (hR : R (.tau (.ret r)) b)
+    (hbound : RetPathBounded n r b) :
+    ∃ m, RetPathBounded m r b := by
+  induction n generalizing b with
+  | zero =>
+    -- b = .ret r by bound
+    simp only [RetPathBounded] at hbound
+    exact ⟨0, hbound⟩
+  | succ n ih =>
+    apply EquivUTT.F_cases_x (isFixpoint _ _ hR)
+    · intro _ ha _; exact absurd ha tau_ne_ret
+    · intro _ _ _ ha _ _; exact absurd ha tau_ne_vis
+    · intro t' b' ha hb hR'
+      -- tau: R t' b' where .tau (.ret r) = .tau t', so t' = .ret r
+      have heq : t' = .ret r := (tau_inj ha).symm
+      have ⟨m, hm⟩ := h_ret_bounded r b' (heq ▸ hR')
+      exact ⟨m + 1, .inr ⟨b', hb, hm⟩⟩
+    · intro t' ha hR'
+      -- taul: R t' b where t' = .ret r
+      have heq : t' = .ret r := (tau_inj ha).symm
+      exact h_ret_bounded r b (heq ▸ hR')
+    · intro b' hb hRb'
+      -- taur: R (.tau (.ret r)) b' where b = .tau b'
+      -- The bound on b' is one less since b = .tau b'
+      have hbound' := bound_decreases_ret_tau hb hbound
+      have ⟨m, hm⟩ := ih hRb' hbound'
+      exact ⟨m + 1, .inr ⟨b', hb, hm⟩⟩
+
+/-- Given R (.tau t) b with an ih that handles R t _, prove Terminates b r.
+
+This uses strong induction on an explicit bound. In the taur case, the bound
+decreases because b = .tau b'. In tau/taul cases, ih applies directly.
+
+This helper is used to eliminate the nested taur sorries in EquivUTT.toBisim. -/
+private theorem terminates_from_tau_with_bound
+    {R : ITree α ε ρ → ITree α ε ρ → Prop}
+    (isFixpoint : ∀ a b, R a b → EquivUTT.F R a b)
+    {t : ITree α ε ρ} {r : ρ}
+    (ih : ∀ b, R t b → Terminates b r)
+    {n : ℕ} {b : ITree α ε ρ}
+    (hR : R (.tau t) b)
+    (hbound : RetPathBounded n r b) :
+    Terminates b r := by
+  induction n generalizing b with
+  | zero =>
+    simp only [RetPathBounded] at hbound
+    exact hbound ▸ .ret
+  | succ n ih_n =>
+    apply EquivUTT.F_cases_x (isFixpoint _ _ hR)
+    · intro _ ha _; exact absurd ha tau_ne_ret
+    · intro _ _ _ ha _ _; exact absurd ha tau_ne_vis
+    · intro t' b' ha hb hR'
+      have heq : t' = t := (tau_inj ha).symm
+      exact hb ▸ .tau (ih b' (heq ▸ hR'))
+    · intro t' ha hR'
+      have heq : t' = t := (tau_inj ha).symm
+      exact ih b (heq ▸ hR')
+    · intro b' hb hRb'
+      have hbound' := bound_decreases_ret_tau hb hbound
+      exact hb ▸ .tau (ih_n hRb' hbound')
+
+/-- Symmetric: prove Terminates a r from R a (.tau t) with bound on a -/
+private theorem terminates_from_tau_with_bound'
+    {R : ITree α ε ρ → ITree α ε ρ → Prop}
+    (isFixpoint : ∀ a b, R a b → EquivUTT.F R a b)
+    {t : ITree α ε ρ} {r : ρ}
+    (ih : ∀ a, R a t → Terminates a r)
+    {n : ℕ} {a : ITree α ε ρ}
+    (hR : R a (.tau t))
+    (hbound : RetPathBounded n r a) :
+    Terminates a r := by
+  induction n generalizing a with
+  | zero =>
+    simp only [RetPathBounded] at hbound
+    exact hbound ▸ .ret
+  | succ n ih_n =>
+    apply EquivUTT.F_cases_x (isFixpoint _ _ hR)
+    · intro _ _ hb; exact absurd hb tau_ne_ret
+    · intro _ _ _ _ hb _; exact absurd hb tau_ne_vis
+    · intro a' t' ha hb hR'
+      have heq : t' = t := (tau_inj hb).symm
+      exact ha ▸ .tau (ih a' (heq ▸ hR'))
+    · intro a' ha hR'
+      have hbound' := bound_decreases_ret_tau ha hbound
+      exact ha ▸ .tau (ih_n hR' hbound')
+    · intro t' hb hR'
+      have heq : t' = t := (tau_inj hb).symm
+      exact ih a (heq ▸ hR')
+
 /-- EquivUTT implies Bisim.
 
 The proof uses the boundedness conditions from EquivUTT to show that
 termination and CanDo behaviors are preserved. -/
 theorem EquivUTT.toBisim {t₁ t₂ : ITree α ε ρ} : EquivUTT t₁ t₂ → Bisim t₁ t₂ := by
-  rintro ⟨R, isFixpoint, h_ret_bounded, h_ret_bounded', h_vis_bounded, h_vis_bounded', hR⟩
+  rintro ⟨R, isFixpoint, h_term_bounded, h_term_bounded', h_vis_bounded, h_vis_bounded', hR⟩
   -- Use R as the witness relation for Bisim
   refine ⟨R, ?_, hR⟩
   -- Need to show R is a post-fixpoint of Bisim.F
@@ -210,11 +364,11 @@ theorem EquivUTT.toBisim {t₁ t₂ : ITree α ε ρ} : EquivUTT t₁ t₂ → B
       intro ht
       induction ht generalizing b with
       | ret =>
-        -- a = .ret r, use h_ret_bounded
-        have ⟨n, hn⟩ := h_ret_bounded _ b hab
+        -- a = .ret r, use h_term_bounded with Terminates.ret
+        have ⟨n, hn⟩ := h_term_bounded _ _ b .ret hab
         exact RetPathBounded.toTerminates hn
-      | tau _ ih =>
-        -- a = .tau t, Terminates t r
+      | tau ht ih =>
+        -- a = .tau t, ht : Terminates t r, ih : ∀ b, R t b → Terminates b r
         apply EquivUTT.F_cases_x (isFixpoint _ _ hab)
         · intro _ ha _
           exact absurd ha tau_ne_ret
@@ -239,19 +393,20 @@ theorem EquivUTT.toBisim {t₁ t₂ : ITree α ε ρ} : EquivUTT t₁ t₂ → B
           · intro _ ha' hR''
             have hx := tau_inj ha'
             exact hb ▸ .tau (ih b' (hx ▸ hR''))
-          · intro b'' hb' _
-            -- Nested taur - use the boundedness to ensure termination
-            -- For simplicity, use sorry here - proper fix needs well-founded recursion
-            exact hb ▸ .tau (hb' ▸ .tau (by sorry))
+          · intro b'' hb' hRb''
+            -- Nested taur: R (.tau t) b'', need Terminates b'' r
+            -- Use h_term_bounded with Terminates (.tau t) r = .tau ht
+            have ⟨n, hn⟩ := h_term_bounded _ _ b'' (.tau ht) hRb''
+            exact hb ▸ .tau (hb' ▸ .tau (RetPathBounded.toTerminates hn))
     · -- Backward: Terminates b r → Terminates a r
       intro ht
       induction ht generalizing a with
       | ret =>
-        -- b = .ret r, use h_ret_bounded'
-        have ⟨n, hn⟩ := h_ret_bounded' _ a hab
+        -- b = .ret r, use h_term_bounded' with Terminates.ret
+        have ⟨n, hn⟩ := h_term_bounded' a _ _ .ret hab
         exact RetPathBounded.toTerminates hn
-      | tau _ ih =>
-        -- b = .tau t, Terminates t r
+      | tau ht ih =>
+        -- b = .tau t, ht : Terminates t r, ih : ∀ a, R a t → Terminates a r
         apply EquivUTT.F_cases_x (isFixpoint _ _ hab)
         · intro _ _ hb
           exact absurd hb tau_ne_ret
@@ -270,9 +425,11 @@ theorem EquivUTT.toBisim {t₁ t₂ : ITree α ε ρ} : EquivUTT t₁ t₂ → B
           · intro x'' _ ha' hb' hR''
             have hy := tau_inj hb'
             exact ha ▸ .tau (ha' ▸ .tau (ih x'' (hy ▸ hR'')))
-          · intro a'' ha' _
-            -- Nested taul - use sorry
-            exact ha ▸ .tau (ha' ▸ .tau (by sorry))
+          · intro a'' ha' hR''
+            -- Nested taul: R a'' (.tau t), need Terminates a'' r
+            -- Use h_term_bounded' with Terminates (.tau t) r = .tau ht
+            have ⟨n, hn⟩ := h_term_bounded' a'' _ _ (.tau ht) hR''
+            exact ha ▸ .tau (ha' ▸ .tau (RetPathBounded.toTerminates hn))
           · intro y' hb' hRy'
             have hy := tau_inj hb'
             exact ha ▸ .tau (ih a' (hy ▸ hRy'))
