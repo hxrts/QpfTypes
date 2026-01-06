@@ -546,4 +546,15 @@ theorem EquivUTT.toBisim {t₁ t₂ : ITree α ε ρ} : EquivUTT t₁ t₂ → B
 theorem Bisim.iff_EquivUTT {t₁ t₂ : ITree α ε ρ} : Bisim t₁ t₂ ↔ EquivUTT t₁ t₂ :=
   ⟨Bisim.toEquivUTT, EquivUTT.toBisim⟩
 
+/-- Transitivity for EquivUTT via the Bisim detour.
+
+This provides a sorry-free transitivity proof by routing through the
+membership-based `Bisim` formulation, which has a direct transitivity proof.
+The equivalence `Bisim ↔ EquivUTT` lets us convert back and forth.
+
+Use this instead of `EquivUTT.trans` which has sorries due to QPF limitations. -/
+theorem EquivUTT.trans' {x y z : ITree α ε ρ} :
+    EquivUTT x y → EquivUTT y z → EquivUTT x z :=
+  fun h1 h2 => Bisim.toEquivUTT (Bisim.trans (EquivUTT.toBisim h1) (EquivUTT.toBisim h2))
+
 end ITree
