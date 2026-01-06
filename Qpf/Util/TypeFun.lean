@@ -79,7 +79,7 @@ namespace TypeFun
     cases n
     case zero =>
       funext x;
-      simp [curriedAux, ofCurriedAux, Matrix.vecEmpty]
+      simp [curriedAux, ofCurriedAux]
       congr
       funext i
       contradiction

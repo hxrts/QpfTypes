@@ -6,3 +6,16 @@ Qpf/Scratch.lean
 Scratch2.lean
 
 Qpf/_Text/out
+
+# macOS
+.DS_Store
+
+# Nix/direnv
+.direnv/
+result
+
+# Claude
+.claude/
+
+# working
+work/

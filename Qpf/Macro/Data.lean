@@ -343,6 +343,7 @@ def mkShape (view : DataView) : TermElabM MkShapeResult := do
     isClass := false
     allowIndices := false
     allowSortPolymorphism := false
+    docString? := none
     : InductiveView
   }
 

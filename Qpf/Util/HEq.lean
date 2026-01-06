@@ -9,7 +9,7 @@ Authors: Alex Keizer
 -/
 
 /-- Consecutive casts can be reduced to a single cast, by transitivity  -/
-@[deprecated cast_cast]
+@[deprecated cast_cast (since := "2024-01-01")]
 theorem cast_trans {α β : Sort _} (a : α) {h₁ : α = β} {h₂ : β = γ} :
     (cast h₂ $ cast h₁ a) = cast (Eq.trans h₁ h₂) a := by
   exact cast_cast h₁ h₂ a
