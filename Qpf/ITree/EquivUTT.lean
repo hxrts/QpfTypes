@@ -130,6 +130,21 @@ theorem RetPathBounded.toTerminates {n : ℕ} {r : ρ} {b : ITree α ε ρ} :
     · exact heq ▸ .ret
     · exact heq ▸ .tau (ih hrec)
 
+/-! ### Conversion between CanDo and VisPathBounded -/
+
+/-- Convert CanDo to VisPathBounded: if `b` can do event `e` with continuation `k₂`,
+    and we have `R`-related continuations, then there's a bounded path. -/
+theorem CanDo.toVisPathBounded {b : ITree α ε ρ} {e : ε} {k₂ : α → ITree α ε ρ}
+    {R : ITree α ε ρ → ITree α ε ρ → Prop} {k₁ : α → ITree α ε ρ}
+    (hcont : ∀ i, R (k₁ i) (k₂ i)) :
+    CanDo b e k₂ → ∃ n, VisPathBounded n e R k₁ b := by
+  intro hc
+  induction hc with
+  | vis => exact ⟨0, _, rfl, hcont⟩
+  | tau _ ih =>
+    obtain ⟨n, hn⟩ := ih hcont
+    exact ⟨n + 1, .inr ⟨_, rfl, hn⟩⟩
+
 /-- One-step functor for weak bisimulation.
     This has ITree constructors in its indices, which causes issues with
     QPF quotient elimination during nested case analysis. -/

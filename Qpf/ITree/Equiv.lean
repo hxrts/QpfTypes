@@ -43,20 +43,6 @@ The key insight is to use the tau-peeling lemmas from Bisim.lean:
 
 These let us strip taus when constructing `EquivUTT.F` terms. -/
 
-/-! ### Conversion between CanDo and bounded path predicates -/
-
-/-- Convert CanDo to VisPathBounded -/
-theorem CanDo.toVisPathBounded {b : ITree α ε ρ} {e : ε} {k₂ : α → ITree α ε ρ}
-    {R : ITree α ε ρ → ITree α ε ρ → Prop} {k₁ : α → ITree α ε ρ}
-    (hcont : ∀ i, R (k₁ i) (k₂ i)) :
-    CanDo b e k₂ → ∃ n, VisPathBounded n e R k₁ b := by
-  intro hc
-  induction hc with
-  | vis => exact ⟨0, _, rfl, hcont⟩
-  | tau _ ih =>
-    obtain ⟨n, hn⟩ := ih hcont
-    exact ⟨n + 1, .inr ⟨_, rfl, hn⟩⟩
-
 /-- Bisim implies EquivUTT.
 
 Uses tau-peeling lemmas to handle the tau cases. -/
@@ -450,13 +436,16 @@ theorem EquivUTT.toBisim {t₁ t₂ : ITree α ε ρ} : EquivUTT t₁ t₂ → B
   constructor
   -- CanDo left-to-right
   · intro e k₁ hc
-    induction hc generalizing b with
+    revert b
+    induction hc with
     | vis =>
+      intro b hab
       -- a = .vis e k₁, use h_vis_bounded
       have ⟨n, hn⟩ := h_vis_bounded _ _ b hab
       exact VisPathBounded.toCanDo hn
-    | tau _ ih =>
-      -- a = .tau t, CanDo t e k₁
+    | tau hinner ih =>
+      -- a = .tau t, hinner : CanDo t e k₁
+      intro b hab
       apply EquivUTT.F_cases_x (isFixpoint _ _ hab)
       · intro _ ha _
         exact absurd ha tau_ne_ret
@@ -487,24 +476,25 @@ theorem EquivUTT.toBisim {t₁ t₂ : ITree α ε ρ} : EquivUTT t₁ t₂ → B
           let ⟨k₂, hk₂, hcont⟩ := ih b' (hx ▸ hR'')
           exact ⟨k₂, hb ▸ CanDo.tau hk₂, hcont⟩
         · intro b'' hb' hRb''
-          -- Nested taur: R (.tau t) b''
-          -- Use h_cando_bounded with CanDo (.tau t) e k₁ = .tau (original CanDo)
-          -- The outer induction gives us CanDo t e k₁, so CanDo (.tau t) e k₁ = .tau _
-          have hcando_tau : CanDo (.tau _) e k₁ := .tau ‹CanDo _ e k₁›
-          have ⟨n, hn⟩ := h_cando_bounded e k₁ _ b'' hcando_tau hRb''
+          -- Nested taur: R (.tau _) b''
+          -- Use h_cando_bounded with .tau hinner
+          have ⟨n, hn⟩ := h_cando_bounded _ _ _ b'' (CanDo.tau hinner) hRb''
           let ⟨k₂, hk₂, hcont⟩ := VisPathBounded.toCanDo hn
-          exact ⟨k₂, hb ▸ CanDo.tau (hb' ▸ hk₂), hcont⟩
+          exact ⟨k₂, hb ▸ CanDo.tau (hb' ▸ CanDo.tau hk₂), hcont⟩
   -- CanDo right-to-left
   · intro e k₂ hc
-    induction hc generalizing a with
+    revert a
+    induction hc with
     | vis =>
+      intro a hab
       -- b = .vis e k₂, use h_vis_bounded'
       have ⟨n, _, hvp, hcont⟩ := h_vis_bounded' _ _ a hab
       let ⟨k₁', hk₁, hcont'⟩ := VisPathBounded.toCanDo hvp
       -- hcont' : ∀ i, (flip R) (k₂ i) (k₁' i) = ∀ i, R (k₁' i) (k₂ i)
       exact ⟨k₁', hk₁, hcont'⟩
-    | tau _ ih =>
-      -- b = .tau t, CanDo t e k₂
+    | tau hinner ih =>
+      -- b = .tau t, hinner : CanDo t e k₂
+      intro a hab
       apply EquivUTT.F_cases_x (isFixpoint _ _ hab)
       · intro _ _ hb
         exact absurd hb tau_ne_ret
@@ -527,13 +517,11 @@ theorem EquivUTT.toBisim {t₁ t₂ : ITree α ε ρ} : EquivUTT t₁ t₂ → B
           let ⟨k₁, hk₁, hcont⟩ := ih x'' (hy ▸ hR'')
           exact ⟨k₁, ha ▸ CanDo.tau (ha' ▸ CanDo.tau hk₁), hcont⟩
         · intro a'' ha' hR''
-          -- Nested taul: R a'' (.tau t)
-          -- Use h_cando_bounded' with CanDo (.tau t) e k₂ = .tau (original CanDo)
-          -- The outer induction gives us CanDo t e k₂, so CanDo (.tau t) e k₂ = .tau _
-          have hcando_tau : CanDo (.tau _) e k₂ := .tau ‹CanDo _ e k₂›
-          have ⟨n, k₁', hn, hcont⟩ := h_cando_bounded' e k₂ a'' _ hcando_tau hR''
+          -- Nested taul: R a'' (.tau _)
+          -- Use h_cando_bounded' with .tau hinner
+          have ⟨n, k₁', hn, hcont⟩ := h_cando_bounded' _ _ a'' _ (CanDo.tau hinner) hR''
           let ⟨k₁'', hk₁, hcont'⟩ := VisPathBounded.toCanDo hn
-          exact ⟨k₁'', ha ▸ CanDo.tau (ha' ▸ hk₁), hcont'⟩
+          exact ⟨k₁'', ha ▸ CanDo.tau (ha' ▸ CanDo.tau hk₁), hcont'⟩
         · intro y'' hb' hRy''
           have hy := tau_inj hb'
           let ⟨k₁, hk₁, hcont⟩ := ih a' (hy ▸ hRy'')
