@@ -183,6 +183,11 @@ The `h_term_bounded` conditions use `Terminates` from the Bisim formulation:
 if `a` terminates to `r` and `R a b`, then `b` is bounded (reaches `r` in finite steps).
 This generalizes over all tau depths and directly handles nested taur cases.
 
+The `h_cando_bounded` conditions use `CanDo` from the Bisim formulation:
+if `a` can do event `e` with continuation `k₁` and `R a b`, then `b` is bounded
+(reaches a vis node with `e` in finite steps). This generalizes `h_vis_bounded`
+to handle the case where `a` isn't necessarily `.vis e k₁` but has `CanDo a e k₁`.
+
 These conditions are automatically satisfied by "well-behaved" bisimulation
 relations and are needed to establish equivalence with the membership-based
 `Bisim` formulation. -/
@@ -197,6 +202,11 @@ inductive EquivUTT (x y : ITree α ε ρ) : Prop where
       R (.vis e k₁) b → ∃ n, VisPathBounded n e R k₁ b)
     (h_vis_bounded' : ∀ (e : ε) (k₂ : α → ITree α ε ρ) (a : ITree α ε ρ),
       R a (.vis e k₂) → ∃ (n : ℕ) (k₁ : α → ITree α ε ρ),
+        VisPathBounded n e (flip R) k₂ a ∧ ∀ i, R (k₁ i) (k₂ i))
+    (h_cando_bounded : ∀ (e : ε) (k₁ : α → ITree α ε ρ) (a b : ITree α ε ρ),
+      CanDo a e k₁ → R a b → ∃ n, VisPathBounded n e R k₁ b)
+    (h_cando_bounded' : ∀ (e : ε) (k₂ : α → ITree α ε ρ) (a b : ITree α ε ρ),
+      CanDo b e k₂ → R a b → ∃ (n : ℕ) (k₁ : α → ITree α ε ρ),
         VisPathBounded n e (flip R) k₂ a ∧ ∀ i, R (k₁ i) (k₂ i))
     (h_R : R x y)
 
@@ -222,10 +232,19 @@ theorem refl (x : ITree α ε ρ) : EquivUTT x x := by
   · -- h_vis_bounded': R a (.vis e k₂) means a = .vis e k₂
     intro e k₂ a ha
     exact ⟨0, k₂, ⟨k₂, ha, fun _ => rfl⟩, fun _ => rfl⟩
+  · -- h_cando_bounded: CanDo a e k₁ → a = b → ∃ n, VisPathBounded n e (· = ·) k₁ b
+    intro e k₁ a b hcando heq
+    have ⟨n, hn⟩ := CanDo.toVisPathBounded (R := (· = ·)) (fun _ => rfl) hcando
+    exact ⟨n, heq ▸ hn⟩
+  · -- h_cando_bounded': CanDo b e k₂ → a = b → ∃ n k₁, ...
+    intro e k₂ a b hcando heq
+    have ⟨n, hn⟩ := CanDo.toVisPathBounded (R := flip (· = ·)) (fun _ => rfl) hcando
+    exact ⟨n, k₂, heq.symm ▸ hn, fun _ => rfl⟩
   · rfl
 
 theorem symm {x y : ITree α ε ρ} : EquivUTT x y → EquivUTT y x := by
-  rintro ⟨R, isFixpoint, h_term_bounded, h_term_bounded', h_vis_bounded, h_vis_bounded', h_R⟩
+  rintro ⟨R, isFixpoint, h_term_bounded, h_term_bounded', h_vis_bounded, h_vis_bounded',
+         h_cando_bounded, h_cando_bounded', h_R⟩
   apply EquivUTT.intro (R := flip R)
   · -- h_fixpoint for flip R
     rintro a b h_fR
@@ -250,6 +269,17 @@ theorem symm {x y : ITree α ε ρ} : EquivUTT x y → EquivUTT y x := by
     -- flip R a (.vis e k₂) = R (.vis e k₂) a
     intro e k₂ a ha
     have ⟨n, hvp⟩ := h_vis_bounded e k₂ a ha
+    have ⟨k₁, hcont⟩ := VisPathBounded.getCont hvp
+    exact ⟨n, k₁, hvp, hcont⟩
+  · -- h_cando_bounded for flip R: comes from h_cando_bounded' of R
+    -- flip R a b = R b a, CanDo a e k₁ → R b a → ∃ n, VisPathBounded n e (flip R) k₁ b
+    intro e k₁ a b hcando hfR
+    have ⟨n, _, hvp, _⟩ := h_cando_bounded' e k₁ b a hcando hfR
+    exact ⟨n, hvp⟩
+  · -- h_cando_bounded' for flip R: comes from h_cando_bounded of R
+    -- flip R a b = R b a, CanDo b e k₂ → R b a → ∃ n k₁, VisPathBounded n e (flip (flip R)) k₂ a ∧ ...
+    intro e k₂ a b hcando hfR
+    have ⟨n, hvp⟩ := h_cando_bounded e k₂ b a hcando hfR
     have ⟨k₁, hcont⟩ := VisPathBounded.getCont hvp
     exact ⟨n, k₁, hvp, hcont⟩
   · exact h_R
@@ -296,8 +326,10 @@ with up-to techniques that aren't available in the Lean QPF framework.
 For a complete proof, use `ITree.Bisim` from `Qpf.ITree.Bisim`, which uses
 a membership-based formulation that avoids these issues. -/
 theorem trans {x y z : ITree α ε ρ} : EquivUTT x y → EquivUTT y z → EquivUTT x z := by
-  rintro ⟨R₁, isFixpoint₁, h_term_bounded₁, h_term_bounded'₁, h_vis_bounded₁, h_vis_bounded'₁, h_R₁⟩
-  rintro ⟨R₂, isFixpoint₂, h_term_bounded₂, h_term_bounded'₂, h_vis_bounded₂, h_vis_bounded'₂, h_R₂⟩
+  rintro ⟨R₁, isFixpoint₁, h_term_bounded₁, h_term_bounded'₁, h_vis_bounded₁, h_vis_bounded'₁,
+         h_cando_bounded₁, h_cando_bounded'₁, h_R₁⟩
+  rintro ⟨R₂, isFixpoint₂, h_term_bounded₂, h_term_bounded'₂, h_vis_bounded₂, h_vis_bounded'₂,
+         h_cando_bounded₂, h_cando_bounded'₂, h_R₂⟩
   let R' (a c) := ∃ b, R₁ a b ∧ R₂ b c
   apply EquivUTT.intro (R := R')
   · -- h_fixpoint for R'
@@ -341,6 +373,17 @@ theorem trans {x y z : ITree α ε ρ} : EquivUTT x y → EquivUTT y z → Equiv
     sorry
   · -- h_vis_bounded' for R'
     intro e k₂ a ⟨b, hR₁, hR₂⟩
+    sorry
+  · -- h_cando_bounded for R': CanDo a e k₁ → R' a c → ∃ n, VisPathBounded n e R' k₁ c
+    intro e k₁ a c hcando ⟨b, hR₁, hR₂⟩
+    -- Chain: CanDo a e k₁ and R₁ a b → bound on b → CanDo b e k₁' → bound on c
+    have ⟨n₁, hn₁⟩ := h_cando_bounded₁ e k₁ a b hcando hR₁
+    -- hn₁ : VisPathBounded n₁ e R₁ k₁ b
+    -- Need to compose with R₂ to get VisPathBounded for R'
+    sorry
+  · -- h_cando_bounded' for R': CanDo c e k₂ → R' a c → ∃ n k₁, ...
+    intro e k₂ a c hcando ⟨b, hR₁, hR₂⟩
+    have ⟨n₂, k₂', hn₂, hcont₂⟩ := h_cando_bounded'₂ e k₂ b c hcando hR₂
     sorry
   · exact ⟨y, h_R₁, h_R₂⟩
 

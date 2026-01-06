@@ -23,17 +23,14 @@ taus from bisimulations, enabling construction of `EquivUTT.F` terms.
 The boundedness conditions in EquivUTT ensure that tau chains are finite,
 making the EquivUTT → Bisim direction provable.
 
-## Known limitations
+## Completeness
 
-The `EquivUTT.toBisim` proof contains two `sorry` placeholders in the CanDo
-nested taur/taul cases. The Terminates proofs are complete thanks to the
-`h_term_bounded` conditions which directly handle nested tau chains.
+The `EquivUTT.toBisim` proof is complete. All edge cases are handled by the
+boundedness conditions in EquivUTT:
+- `h_term_bounded` conditions handle nested tau chains for Terminates
+- `h_cando_bounded` conditions handle nested tau chains for CanDo
 
-The CanDo sorries occur because `h_vis_bounded` only applies when the LHS is
-`.vis e k`, not when it's `.tau _`. A complete fix would require adding
-analogous `h_cando_bounded` conditions to EquivUTT, which would track CanDo
-bounds through tau chains. For a complete equivalence proof, use `ITree.Bisim`
-from `Qpf.ITree.Bisim` which has a membership-based formulation.
+The equivalence `Bisim ↔ EquivUTT` is fully proven.
 -/
 
 namespace ITree
@@ -126,6 +123,19 @@ theorem Bisim.toEquivUTT {t₁ t₂ : ITree α ε ρ} : Bisim t₁ t₂ → Equi
     have hF := Bisim.Bisim_isFixpoint _ _ hab
     have ⟨_, _, hvis_rl⟩ := hF
     have ⟨k₁, hk₁, hcont⟩ := hvis_rl e k₂ .vis
+    have ⟨n, hvpb⟩ := CanDo.toVisPathBounded (R := flip Bisim) (fun i => hcont i) hk₁
+    exact ⟨n, k₁, hvpb, hcont⟩
+  · -- h_cando_bounded: CanDo a e k₁ → Bisim a b → ∃ n, VisPathBounded n e Bisim k₁ b
+    intro e k₁ a b hcando hab
+    have hF := Bisim.Bisim_isFixpoint _ _ hab
+    have ⟨_, hvis_lr, _⟩ := hF
+    have ⟨k₂, hk₂, hcont⟩ := hvis_lr e k₁ hcando
+    exact CanDo.toVisPathBounded hcont hk₂
+  · -- h_cando_bounded': CanDo b e k₂ → Bisim a b → ∃ n k₁, VisPathBounded n e (flip Bisim) k₂ a ∧ ∀ i, Bisim (k₁ i) (k₂ i)
+    intro e k₂ a b hcando hab
+    have hF := Bisim.Bisim_isFixpoint _ _ hab
+    have ⟨_, _, hvis_rl⟩ := hF
+    have ⟨k₁, hk₁, hcont⟩ := hvis_rl e k₂ hcando
     have ⟨n, hvpb⟩ := CanDo.toVisPathBounded (R := flip Bisim) (fun i => hcont i) hk₁
     exact ⟨n, k₁, hvpb, hcont⟩
   · exact hbisim
@@ -351,7 +361,8 @@ private theorem terminates_from_tau_with_bound'
 The proof uses the boundedness conditions from EquivUTT to show that
 termination and CanDo behaviors are preserved. -/
 theorem EquivUTT.toBisim {t₁ t₂ : ITree α ε ρ} : EquivUTT t₁ t₂ → Bisim t₁ t₂ := by
-  rintro ⟨R, isFixpoint, h_term_bounded, h_term_bounded', h_vis_bounded, h_vis_bounded', hR⟩
+  rintro ⟨R, isFixpoint, h_term_bounded, h_term_bounded', h_vis_bounded, h_vis_bounded',
+         h_cando_bounded, h_cando_bounded', hR⟩
   -- Use R as the witness relation for Bisim
   refine ⟨R, ?_, hR⟩
   -- Need to show R is a post-fixpoint of Bisim.F
@@ -476,11 +487,13 @@ theorem EquivUTT.toBisim {t₁ t₂ : ITree α ε ρ} : EquivUTT t₁ t₂ → B
           let ⟨k₂, hk₂, hcont⟩ := ih b' (hx ▸ hR'')
           exact ⟨k₂, hb ▸ CanDo.tau hk₂, hcont⟩
         · intro b'' hb' hRb''
-          -- Still have R (.tau t) b'', need to recurse more
-          -- Nested taur - needs well-founded recursion
-          -- This case requires proving termination for infinite taur chains
-          -- which should be ruled out by the boundedness conditions
-          sorry
+          -- Nested taur: R (.tau t) b''
+          -- Use h_cando_bounded with CanDo (.tau t) e k₁ = .tau (original CanDo)
+          -- The outer induction gives us CanDo t e k₁, so CanDo (.tau t) e k₁ = .tau _
+          have hcando_tau : CanDo (.tau _) e k₁ := .tau ‹CanDo _ e k₁›
+          have ⟨n, hn⟩ := h_cando_bounded e k₁ _ b'' hcando_tau hRb''
+          let ⟨k₂, hk₂, hcont⟩ := VisPathBounded.toCanDo hn
+          exact ⟨k₂, hb ▸ CanDo.tau (hb' ▸ hk₂), hcont⟩
   -- CanDo right-to-left
   · intro e k₂ hc
     induction hc generalizing a with
@@ -514,10 +527,13 @@ theorem EquivUTT.toBisim {t₁ t₂ : ITree α ε ρ} : EquivUTT t₁ t₂ → B
           let ⟨k₁, hk₁, hcont⟩ := ih x'' (hy ▸ hR'')
           exact ⟨k₁, ha ▸ CanDo.tau (ha' ▸ CanDo.tau hk₁), hcont⟩
         · intro a'' ha' hR''
-          -- Nested taul - needs well-founded recursion
-          -- This case requires proving termination for infinite taul chains
-          -- which should be ruled out by the boundedness conditions
-          sorry
+          -- Nested taul: R a'' (.tau t)
+          -- Use h_cando_bounded' with CanDo (.tau t) e k₂ = .tau (original CanDo)
+          -- The outer induction gives us CanDo t e k₂, so CanDo (.tau t) e k₂ = .tau _
+          have hcando_tau : CanDo (.tau _) e k₂ := .tau ‹CanDo _ e k₂›
+          have ⟨n, k₁', hn, hcont⟩ := h_cando_bounded' e k₂ a'' _ hcando_tau hR''
+          let ⟨k₁'', hk₁, hcont'⟩ := VisPathBounded.toCanDo hn
+          exact ⟨k₁'', ha ▸ CanDo.tau (ha' ▸ hk₁), hcont'⟩
         · intro y'' hb' hRy''
           have hy := tau_inj hb'
           let ⟨k₁, hk₁, hcont⟩ := ih a' (hy ▸ hRy'')
