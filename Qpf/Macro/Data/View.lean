@@ -293,6 +293,15 @@ private partial def collectLevelNames (stx : Syntax) (levelNames : List Name) : 
     | _ => s.getArgs.foldl (fun acc s => go s acc) acc
   go stx [] |>.eraseDups
 
+private def stripParens : Syntax → Syntax
+  | Syntax.node _ ``Parser.Term.paren #[_, inner, _] => stripParens inner
+  | stx => stx
+
+private def isAllowedExplicitType (stx : Syntax) : Bool :=
+  let stx := stripParens stx
+  let k := stx.getKind
+  k == ``Parser.Term.type || k == ``Parser.Term.sort || k == ``Parser.Term.prop
+
 
 /--
   Raises informative errors when `data` or `codata` are used with unsupported specifications.
@@ -307,9 +316,12 @@ def DataView.doSanityChecks (view : DataView) : CommandElabM Unit := do
     else
       throwErrorAt view.binders "You should mark some variables as live by removing the type ascription (they will be automatically inferred as `Type _`), or if you don't have variables of type `Type _`, you probably want an `inductive` type"
 
-  -- TODO: Allow types like `Type`, `Type 3`, or `Type u` and only throw an error for indexed families
   match view.type? with
-  | some t => throwErrorAt t "Unexpected type; type will be automatically inferred. Note that inductive families are not supported due to inherent limitations of QPFs"
+  | some t =>
+      if isAllowedExplicitType t then
+        pure ()
+      else
+        throwErrorAt t "Only explicit result types of the form `Type`, `Type u`, `Type n`, or `Sort u` are supported. Indexed families (e.g., `Nat → Type`) are not supported by QPFs."
   | none => pure ()
 
 
