@@ -194,6 +194,7 @@ def genRecursors (view : DataView) : CommandElabM Unit :=
   let rec_type := view.getExpectedType
 
   let mapped := view.ctors.map (RecursionForm.extractWithName view.declName · rec_type)
+  let caseNames := mapped.map fun ⟨name, _⟩ => mkIdent (flattenForArg name)
 
   let ih_types ← mapped.mapM fun ⟨name, base⟩ =>
     mkRecursorBinder (rec_type) (name) base true
@@ -218,6 +219,16 @@ def genRecursors (view : DataView) : CommandElabM Unit :=
     := $(mkIdent ``MvQPF.Fix.drec)
         (match · with $(← generateRecBody mapped true)))
 
+  elabCommandAndTrace (header := "elaborating recOn …") <|← `(
+    @[elab_as_elim]
+    def $(view.shortDeclName ++ `recOn |> mkIdent):ident
+      (val : $rec_type)
+      { motive : $rec_type → Type _}
+      $ih_types*
+      : motive val
+    := $(mkIdent (view.shortDeclName ++ `rec)) (motive := motive) $caseNames:ident* val
+  )
+
   let casesOnTypes ← mapped.mapM fun ⟨name, base⟩ =>
     mkRecursorBinder (rec_type) (name) base false
 
@@ -239,3 +250,13 @@ def genRecursors (view : DataView) : CommandElabM Unit :=
       : (val : $rec_type) → motive val
     := $(mkIdent ``_root_.MvQPF.Fix.drec)
         (match · with $(← generateRecBody mapped false)))
+
+  elabCommandAndTrace (header := "elaborating casesOn …") <|← `(
+    @[elab_as_elim, cases_eliminator]
+    def $(view.shortDeclName ++ `casesOn |> mkIdent):ident
+      (val : $rec_type)
+      { motive : $rec_type → Prop}
+      $casesOnTypes*
+      : motive val
+    := $(mkIdent (view.shortDeclName ++ `cases)) (motive := motive) $caseNames:ident* val
+  )

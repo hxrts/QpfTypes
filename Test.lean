@@ -9,6 +9,7 @@ import Test.ITreeBaseQpf
 import Test.CodataCorec
 import Test.List
 import Test.Misc
+import Test.RecOnCasesOn
 import Test.Tree
 -- import Test.Variable
 import Test.WithBindersInCtor
