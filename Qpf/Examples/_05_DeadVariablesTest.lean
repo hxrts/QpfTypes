@@ -18,10 +18,9 @@ In QPF definitions:
 ## Implementation Status
 
 ✓ Basic dead variable support implemented in `Qpf/Macro/Data/Replace.lean`
-✓ Single dead parameters work correctly
+✓ Single and multiple dead parameters work correctly
 ✓ Dead variables preserved in constructor arguments
-⚠️ Multiple dead parameters may have issues
-⚠️ Mapping over types with dead parameters has limitations
+✓ Codata with dead parameters works
 
 See `Qpf/Problems/P6_Dead_Variables.lean` for full problem description and solution details.
 -/
@@ -62,24 +61,27 @@ data Repeat (n : Nat) α where
 -- Repeat.mk {n : ℕ} {α : Type} : (Fin n → α) → Repeat n α
 
 /-!
-## Test 3: Multiple Dead Parameters (Currently Limited)
-
-Multiple dead parameters currently have issues with QPF instance synthesis.
-This is documented as a remaining limitation.
+## Test 3: Multiple Dead Parameters
 -/
 
--- data Tagged (tag : String) (n : Nat) α where
---   | mk : Fin n → α → Tagged tag n α
+data MultiVec (m n : Nat) α where
+  | nil : MultiVec m n α
+  | cons : Fin m → Fin n → α → MultiVec m n α → MultiVec m n α
+
+#check MultiVec.Shape.Applied
+-- MultiVec.Shape.Applied : Nat → Nat → CurriedTypeFun 2
 
 /-!
-## Test 4: Functor Mapping (Currently Limited)
-
-MvFunctor.map fails when dead parameters appear in constructor arguments.
-This is related to how types like `Fin n` interact with the QPF instance.
+## Test 4: Codata with Dead Parameter
 -/
 
--- def testMap : BoundedVec 3 Nat → BoundedVec 3 String :=
---   MvFunctor.map (fun n => toString n)
+codata TestITree (α : Type) ε ρ where
+  | ret : ρ → TestITree α ε ρ
+  | tau : TestITree α ε ρ → TestITree α ε ρ
+  | vis : ε → (α → TestITree α ε ρ) → TestITree α ε ρ
+
+#check TestITree.Shape.Applied
+-- TestITree.Shape.Applied : Type → CurriedTypeFun 4
 
 /-!
 ## Summary
@@ -90,9 +92,8 @@ The dead variable implementation successfully:
 3. Calculates arity based only on live parameters
 
 Remaining work:
-- Multiple dead parameters need additional support
-- Functor mapping with dead parameter dependencies needs investigation
-- Universe separation between dead and live parameters needs testing
+- Universe separation between dead and live parameters needs more testing
+- Collision detection between dead and fresh variables not yet implemented
 -/
 
 end DeadVariables

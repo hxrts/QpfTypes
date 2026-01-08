@@ -92,7 +92,7 @@ def mkConstructorsWithNameAndType
   These constructors provide a natural interface for creating values of the type,
   hiding the underlying `Shape` and `MvQPF.Fix.mk` machinery.
 -/
-def mkConstructors (view : DataView) (shape : Name) (r : Replace) : CommandElabM Unit :=
+def mkConstructors (view : DataView) (shape : Name) : CommandElabM Unit :=
   withQPFTraceNode "deriving constructors" (tag := "mkConstructors") <| do
   let explicit ← view.getExplicitExpectedType
   let nameGen := (·.declName.replacePrefix (← getCurrNamespace) .anonymous)

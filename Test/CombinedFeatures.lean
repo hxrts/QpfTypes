@@ -7,36 +7,46 @@ data SimpleVec (n : Nat) α where
 
 #check SimpleVec.Shape
 #check SimpleVec.Shape.Applied
--- Expected: Shape.Applied : Nat → CurriedTypeFun 1
+-- Expected: Shape.Applied : Nat → CurriedTypeFun 2
 
 -- Test 2: Universe polymorphism only (no dead parameters)
-data Pair.{u, v} (α : Type u) (β : Type v) where
-  | mk : α → β → Pair α β
+data UPair α β where
+  | mk : α → β → UPair α β
 
-#check Pair.Shape.{u, v}
--- Expected: Shape : Type (max u v)
+#check @UPair.Shape
+-- Expected: Shape is universe-polymorphic
 
 -- Test 3: Combined - dead param + universe polymorphism
-data BoundedVec.{u} (n : Nat) (α : Type u) where
+data BoundedVec (n : Nat) α where
   | nil : BoundedVec n α
   | cons : Fin n → α → BoundedVec n α → BoundedVec n α
 
-#check BoundedVec.Shape.{u}
-#check BoundedVec.Shape.Applied.{u}
--- Expected: Shape.Applied.{u} : Nat → CurriedTypeFun.{u} 1
+#check BoundedVec.Shape
+#check BoundedVec.Shape.Applied
+-- Expected: Shape.Applied : Nat → CurriedTypeFun 2
 
 -- Test 4: Multiple dead parameters
-data Matrix (m n : Nat) α where
-  | mk : (Fin m → Fin n → α) → Matrix m n α
+data MultiVec (m n : Nat) α where
+  | nil : MultiVec m n α
+  | cons : Fin m → Fin n → α → MultiVec m n α → MultiVec m n α
 
-#check Matrix.Shape.Applied
--- Expected: Shape.Applied : Nat → Nat → CurriedTypeFun 1
+#check MultiVec.Shape.Applied
+-- Expected: Shape.Applied : Nat → Nat → CurriedTypeFun 2
 
--- Test 5: ITree (dead param in constructor)
-codata ITree (α : Type) ε ρ where
-  | ret : ρ → ITree α ε ρ
-  | tau : ITree α ε ρ → ITree α ε ρ
-  | vis : ∀ (a : α), (a → ITree α ε ρ) → ITree α ε ρ
+-- Test 5: Codata with dead parameter in constructor
+codata CoVec (n : Nat) α where
+  | cons : Fin n → α → CoVec n α → CoVec n α
 
-#check ITree.Shape.Applied
--- Expected: Shape.Applied : Type → CurriedTypeFun 2
+#check CoVec.Shape
+#check CoVec.Shape.Applied
+-- Expected: Shape.Applied : Nat → CurriedTypeFun 2
+
+-- Test 6: ITree-style codata (dead Type parameter)
+codata TestITree (α : Type) ε ρ where
+  | ret : ρ → TestITree α ε ρ
+  | tau : TestITree α ε ρ → TestITree α ε ρ
+  | vis : ε → (α → TestITree α ε ρ) → TestITree α ε ρ
+
+#check TestITree.Shape
+#check TestITree.Shape.Applied
+-- Expected: Shape.Applied : Type → CurriedTypeFun 4

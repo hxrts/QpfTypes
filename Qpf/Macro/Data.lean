@@ -171,13 +171,13 @@ def mkHeadT (view : InductiveView) (ctorArgs : Array CtorArgs) : CommandElabM Na
   -- The head type is the same as the original type, but with all constructor arguments removed
   -- When HeadT has dead parameters, constructors need explicit result types
   let deadBinderIdents := Macro.getBinderIdents view.binders.getArgs false
-  let headTResult :=
+  let headTResult : Option Term :=
     if deadBinderIdents.isEmpty then
       none  -- No parameters, no explicit type needed
     else
       -- With dead parameters, constructors must have result type: HeadT dead_params
       let headTIdent := mkIdent shortDeclName
-      some $ Syntax.mkApp headTIdent deadBinderIdents
+      some ⟨Syntax.mkApp headTIdent deadBinderIdents⟩
 
   let ctors ← (view.ctors.zip ctorArgs).mapM fun (ctor, args) => do
     let declName := ctor.declName.replacePrefix view.declName declName
@@ -197,7 +197,7 @@ def mkHeadT (view : InductiveView) (ctorArgs : Array CtorArgs) : CommandElabM Na
             for argTy in deadArgTypes.reverse do
               let argTyTerm : Term := ⟨argTy⟩
               result ← `($argTyTerm → $result)
-            pure (some result.raw)
+            pure (some result)
     pure { ctor with
       modifiers, declName,
       binders := mkNullNode,
@@ -205,7 +205,7 @@ def mkHeadT (view : InductiveView) (ctorArgs : Array CtorArgs) : CommandElabM Na
       : CtorView
     }
 
-  -- CRITICAL FIX: HeadT should take dead parameters as regular parameters
+  -- HeadT should take dead parameters as regular parameters
   -- The input view already has binders set to dead parameters only (from mkShape)
   -- We keep those dead parameters for HeadT
 
@@ -250,7 +250,7 @@ def mkChildT (view : InductiveView) (r : Replace) (headTName : Name) (ctorArgs :
     let head := Lean.mkIdent (ctor.declName.replacePrefix view.declName headTName)
     let liveArgs := ctorLiveArgNames args
     let deadArgs := args.args.filter fun arg => !(liveArgs.contains arg)
-    let deadIds := deadArgs.map mkIdent
+    let deadIds := deadArgs.map Lean.mkIdent
 
     let counts := countVarOccurences r ctor.type?
     let counts := counts.map fun n =>
@@ -547,7 +547,11 @@ def mkShape (view : DataView) : TermElabM MkShapeResult := do
     -- HeadT and ChildT should ONLY have dead parameters, not live parameters
     -- Create a view with only dead binders for HeadT/ChildT
     let deadOnlyBinders := shapeView.binders.setArgs deadBinders.raw
-    let viewDeadOnly := { shapeView with binders := deadOnlyBinders }
+    let viewDeadOnly := {
+      shapeView with
+        binders := deadOnlyBinders
+        levelNames := view.liveLevelNames
+    }
 
     let headTName ← mkHeadT viewDeadOnly ctorArgs
     let childTName ← mkChildT viewDeadOnly r headTName ctorArgs
@@ -559,7 +563,7 @@ def mkShape (view : DataView) : TermElabM MkShapeResult := do
     let deadBinderIdents := Macro.getBinderIdents viewDeadOnly.binders.getArgs false
     let pfType ←
       runTermElabM fun _ => do
-        let resultLevel := computeResultUniverse shapeView.levelNames
+        let resultLevel := computeResultUniverse view.liveLevelNames
         let tp := mkApp (mkConst ``MvPFunctor [resultLevel]) (mkNatLit r.arity)
         delab tp
 
@@ -713,7 +717,7 @@ def elabData : CommandElab := fun stx =>
   }
 
   mkType view base
-  mkConstructors view shape r
+  mkConstructors view shape
 
   if let .Data := view.command then
     try genRecursors view

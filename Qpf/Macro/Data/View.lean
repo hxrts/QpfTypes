@@ -77,6 +77,12 @@ end DataCommand
   This is analogous to Lean's `InductiveView` but specialized for QPF types.
   The key difference is the separation of binders into `liveBinders` and `deadBinders`.
 -/
+structure DeadBinderInfo where
+  name         : Name
+  binder       : Syntax
+  universeNames : List Name
+  deriving Inhabited
+
 structure DataView where
   ref             : Syntax
   declId          : TSyntax ``declId
@@ -95,7 +101,24 @@ structure DataView where
   deadBinders     : TSyntaxArray ``bracketedBinder
   /-- Names of dead binders for easy access -/
   deadBinderNames : Array Ident
+  /-- Dead binder metadata, including syntactic universe usage. -/
+  deadBinderInfos : Array DeadBinderInfo
     deriving Inhabited
+
+namespace DataView
+
+def deadLevelNames (view : DataView) : List Name :=
+  view.deadBinderInfos.toList.foldl (fun acc info => acc ++ info.universeNames) [] |>.eraseDups
+
+def liveLevelNames (view : DataView) : List Name :=
+  let dead := view.deadLevelNames
+  let live := view.levelNames.filter (fun n => !dead.contains n)
+  if live.isEmpty && !view.liveBinders.isEmpty then
+    view.levelNames
+  else
+    live
+
+end DataView
 
 
 
@@ -262,6 +285,14 @@ instance : ToString DataView where
 
 /-! ## Parsing Syntax to View -/
 
+private partial def collectLevelNames (stx : Syntax) (levelNames : List Name) : List Name :=
+  let rec go (s : Syntax) (acc : List Name) : List Name :=
+    match s with
+    | Syntax.ident _ _ name _ =>
+        if levelNames.contains name then name :: acc else acc
+    | _ => s.getArgs.foldl (fun acc s => go s acc) acc
+  go stx [] |>.eraseDups
+
 
 /--
   Raises informative errors when `data` or `codata` are used with unsupported specifications.
@@ -329,6 +360,10 @@ def dataSyntaxToView (modifiers : Modifiers) (decl : Syntax) : CommandElabM Data
   let command ← DataCommand.fromSyntax decl[0]
   let (liveBinders, deadBinders) ← Macro.splitLiveAndDeadBinders binders.getArgs
   let (deadBinders, deadBinderNames) ← Macro.mkFreshNamesForBinderHoles deadBinders
+  let deadBinderInfos := deadBinders.raw.mapIdx fun idx binder =>
+    let name := deadBinderNames[idx]!.getId
+    let universeNames := collectLevelNames binder levelNames
+    { name, binder, universeNames }
 
 
   let view := {
@@ -337,7 +372,7 @@ def dataSyntaxToView (modifiers : Modifiers) (decl : Syntax) : CommandElabM Data
     derivingClasses := classes
     declId, modifiers, declName, levelNames
     binders, type?, ctors,
-    command, liveBinders, deadBinders, deadBinderNames
+    command, liveBinders, deadBinders, deadBinderNames, deadBinderInfos
   }
   withQPFTraceNode "elaborated view …" <| do
     trace[QPF] m!"{view}"

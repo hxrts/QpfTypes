@@ -53,6 +53,8 @@ structure Replace where
   (ctor: CtorArgs)
   /-- Names of dead variables that should not be replaced -/
   (deadVarNames : Array Name := #[])
+  /-- Names of live variables (functor parameters) -/
+  (liveVarNames : Array Name := #[])
 
 def Replace.vars (r : Replace) : Array Name := r.newParameters.map Prod.fst
 def Replace.expr (r : Replace) : Array Term := r.newParameters.map Prod.snd
@@ -64,8 +66,8 @@ private abbrev ReplaceM := StateT Replace m
 
 variable {m}
 
-private def Replace.new (deadVarNames : Array Name := #[]) : m Replace :=
-  do pure ⟨#[], ⟨#[], #[]⟩, deadVarNames⟩
+private def Replace.new (deadVarNames : Array Name := #[]) (liveVarNames : Array Name := #[]) : m Replace :=
+  do pure ⟨#[], ⟨#[], #[]⟩, deadVarNames, liveVarNames⟩
 
 private def CtorArgs.reset : ReplaceM m Unit := do
   let r ← StateT.get
@@ -87,9 +89,6 @@ open Parser.Term in
 def Replace.getBinders {m} [Monad m] [MonadQuotation m] (r : Replace) : m <| TSyntax ``bracketedBinder := do
   let names := r.getBinderIdents
   `(bracketedBinderF | ($names* : Type _ ))
-
-
-
 
 /-! ## Core Replacement Logic -/
 
@@ -123,22 +122,19 @@ private def ReplaceM.identFor (stx : Term) : ReplaceM m Ident := do
 
   return mkIdent name
 
+/-! ## Variable Detection -/
 
-
-
-/-! ## Dead Variable Detection -/
-
-/-- Check if a syntax node is an identifier matching one of the dead variable names. -/
-private def isDeadVariable (stx : Syntax) (deadVarNames : Array Name) : Bool :=
+/-- Check if a syntax node is an identifier matching one of the given variable names. -/
+private def isNamedVariable (stx : Syntax) (varNames : Array Name) : Bool :=
   match stx with
-  | Syntax.ident _ _ name _ => deadVarNames.contains name
+  | Syntax.ident _ _ name _ => varNames.contains name
   | _ => false
 
-/-- Check if a syntax node contains a reference to a dead variable (for compound expressions like `Fin n`). -/
-private partial def containsDeadVariable (stx : Syntax) (deadVarNames : Array Name) : Bool :=
-  if isDeadVariable stx deadVarNames then true
+/-- Check if a syntax node contains a reference to any of the given variable names. -/
+private partial def containsVariable (stx : Syntax) (varNames : Array Name) : Bool :=
+  if isNamedVariable stx varNames then true
   else match stx with
-  | Syntax.node _ _ args => args.any (containsDeadVariable · deadVarNames)
+  | Syntax.node _ _ args => args.any (containsVariable · varNames)
   | _ => false
 
 /-! ## Shape Extraction -/
@@ -149,17 +145,19 @@ open Lean.Parser in
   with a fresh variable, such that repeated occurrences of the same expression map to the same
   variable.
 
-  **Dead variable handling**: Arguments containing references to dead variables are NOT replaced.
-  They are kept as-is to preserve the dependency on dead parameters. For example, in
-  `data BoundedVec (n : Nat) α`, an argument of type `Fin n` is preserved rather than being
-  replaced with a fresh type variable.
+  **Dead variable handling**: Arguments that depend only on dead variables (and no live variables)
+  are NOT replaced. They are kept as-is to preserve the dependency on dead parameters.
+  For example, in `data BoundedVec (n : Nat) α`, an argument of type `Fin n` is preserved.
+  Arguments that mention any live variable are still replaced, even if they also mention
+  dead variables (e.g., `α → ITree α ε ρ`).
 -/
 private partial def shapeOf' : Syntax → ReplaceM m Syntax
   | Syntax.node _ ``Term.arrow #[arg, arrow, tail] => do
     let r ← StateT.get
-    -- If the argument contains a dead variable reference, keep it as-is
-    let hasDead := containsDeadVariable arg r.deadVarNames
-    let ctor_arg ← if hasDead then
+    -- If the argument depends only on dead variables, keep it as-is
+    let hasDead := containsVariable arg r.deadVarNames
+    let hasLive := containsVariable arg r.liveVarNames
+    let ctor_arg ← if hasDead && !hasLive then
       -- Preserve dead argument in the constructor type, but still record its binder name
       let argName ← mkFreshBinderName
       let ctor := { r.ctor with args := r.ctor.args.push argName }
@@ -173,8 +171,6 @@ private partial def shapeOf' : Syntax → ReplaceM m Syntax
 
   | ctor_type =>
       pure ctor_type
-
-
 
 open Lean.Parser in
 /-- Given a sequence of (non-dependent) arrows, change the last expression into `res_type`. -/
@@ -210,15 +206,12 @@ def CtorView.withType? (ctor : CtorView) (type? : Option Syntax) : CtorView := {
   ctor with type?
 }
 
-
-
-
 /-! ## Running the Replacement Monad -/
 
 /-- Runs the given action with a fresh instance of `Replace`. -/
-def Replace.run (deadVarNames : Array Name := #[]) : ReplaceM m α → m (α × Replace) :=
+def Replace.run (deadVarNames : Array Name := #[]) (liveVarNames : Array Name := #[]) : ReplaceM m α → m (α × Replace) :=
   fun x => do
-    let r ← Replace.new deadVarNames
+    let r ← Replace.new deadVarNames liveVarNames
     StateT.run x r
 
 /--
@@ -277,8 +270,14 @@ def preProcessCtors (view : DataView) : m DataView := do
 def Replace.shapeOfCtors (view : DataView) (shapeIdent : Syntax)
     : m ((Array CtorView × Array CtorArgs) × Replace) := do
   let deadVarNames := view.deadBinderNames.map (·.getId)
+  let liveVarNames := view.liveBinders.map fun var =>
+    let raw := var.raw
+    if raw.getKind == ``Parser.Term.binderIdent then
+      raw[0].getId
+    else
+      raw.getId
 
-  Replace.run deadVarNames <| do
+  Replace.run deadVarNames liveVarNames <| do
     -- Step 1: Register all live binders as type variables
     for var in view.liveBinders do
       let varIdent : Ident := ⟨if var.raw.getKind == ``Parser.Term.binderIdent then
@@ -325,9 +324,6 @@ def Replace.shapeOfCtors (view : DataView) (shapeIdent : Syntax)
       pure { ctor with type? }
 
     pure (ctors, ctorArgs)
-
-
-
 
 /-! ## Syntax Replacement Utilities -/
 

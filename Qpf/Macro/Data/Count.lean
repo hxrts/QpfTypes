@@ -20,10 +20,12 @@ open Lean Meta Parser
 -/
 private partial def countVarOccurencesAux (r : Replace) (acc : Array Nat) : Syntax → Array Nat
   | Syntax.node _ ``Term.arrow #[arg, _arrow, tail] =>
-      -- NOTE: `idxOf?` returns `none` if not found; we use `acc.size` as fallback (out of bounds)
-      let i := (r.vars.idxOf? arg.getId).getD acc.size
-      let acc := acc.set! i (acc[i]! + 1)
-      countVarOccurencesAux r acc tail
+      match r.vars.idxOf? arg.getId with
+      | some i =>
+          let acc := acc.set! i (acc[i]! + 1)
+          countVarOccurencesAux r acc tail
+      | none =>
+          countVarOccurencesAux r acc tail
   | _ => acc
 
 /--
