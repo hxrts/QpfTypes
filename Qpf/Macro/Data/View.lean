@@ -1,3 +1,26 @@
+/-
+# DataView: Parsed View of data/codata Declarations
+
+This file defines the `DataView` structure, which represents a parsed view of a `data` or
+`codata` declaration. It's analogous to Lean's `InductiveView` but specialized for QPF types.
+
+## Key Types
+
+- `DataCommand`: Distinguishes between `data` (inductive) and `codata` (coinductive)
+- `DataView`: Complete parsed view of a declaration, including:
+  - Live binders (type parameters that can be mapped over)
+  - Dead binders (fixed parameters like `n : Nat`)
+  - Constructors and their types
+
+## Live vs Dead Binders
+
+- **Live binders**: Parameters of type `Type _` that appear as functor positions
+  (e.g., `α` in `List α`). These are what the QPF can map over.
+
+- **Dead binders**: Parameters with explicit non-Type annotations (e.g., `n : Nat`).
+  These are fixed across the type and cannot be mapped over.
+-/
+
 import Mathlib.Data.QPF.Multivariate.Constructions.Cofix
 import Mathlib.Data.QPF.Multivariate.Constructions.Fix
 
@@ -10,6 +33,8 @@ open Parser.Term (bracketedBinder)
 open Parser.Command (declId)
 
 open Macro (withQPFTraceNode)
+
+/-! ## DataCommand -/
 
 inductive DataCommand where
   | Data
@@ -44,13 +69,13 @@ def fixOrCofixPolynomial : DataCommand → Ident
 
 end DataCommand
 
+/-! ## DataView Structure -/
 
+/--
+  Parsed view of a `data` or `codata` declaration.
 
-
-
-/-
-  Mostly a replication of `InductiveView`, but for `data`/`codata`
-  The `binders` field is replaced by `liveBinders`/`deadBindders`
+  This is analogous to Lean's `InductiveView` but specialized for QPF types.
+  The key difference is the separation of binders into `liveBinders` and `deadBinders`.
 -/
 structure DataView where
   ref             : Syntax
@@ -63,10 +88,12 @@ structure DataView where
   type?           : Option Syntax
   ctors           : Array CtorView
   derivingClasses : Array DerivingClassView
-  -- further elements are changed from inductiveView
   command         : DataCommand
+  /-- Live binders: type parameters that can be mapped over (e.g., `α` in `List α`) -/
   liveBinders     : TSyntaxArray ``Parser.Term.binderIdent
+  /-- Dead binders: fixed parameters with explicit types (e.g., `(n : Nat)`) -/
   deadBinders     : TSyntaxArray ``bracketedBinder
+  /-- Names of dead binders for easy access -/
   deadBinderNames : Array Ident
     deriving Inhabited
 
@@ -74,76 +101,84 @@ structure DataView where
 
 
 
-def DataView.asInductive (view : DataView) : InductiveView
-  := {
-    ref             := view.ref
-    declId          := view.declId
-    modifiers       := view.modifiers
-    shortDeclName   := view.shortDeclName
-    declName        := view.declName
-    levelNames      := view.levelNames
-    binders         := view.binders
-    type?           := view.type?
-    ctors           := view.ctors
-    derivingClasses := view.derivingClasses
-    -- TODO: find out what these computed fields are, add support for them in `data`/`codata`
-    computedFields  := #[]
-    isClass := false
-    allowIndices := false
-    allowSortPolymorphism := false
-    docString? := none
-  }
+/-! ## Conversion Functions -/
 
+/--
+  Convert a `DataView` to an `InductiveView` for use with Lean's inductive elaboration.
+
+  Note: Some fields are not yet supported (computed fields, class inductives, sort polymorphism).
+-/
+def DataView.asInductive (view : DataView) : InductiveView := {
+  ref             := view.ref
+  declId          := view.declId
+  modifiers       := view.modifiers
+  shortDeclName   := view.shortDeclName
+  declName        := view.declName
+  levelNames      := view.levelNames
+  binders         := view.binders
+  type?           := view.type?
+  ctors           := view.ctors
+  derivingClasses := view.derivingClasses
+  -- TODO: Add support for computed fields in data/codata declarations
+  computedFields  := #[]
+  isClass := false
+  allowIndices := false
+  allowSortPolymorphism := false
+  docString? := none
+}
+
+
+/-! ## Binder Manipulation -/
 
 open Lean.Parser in
-def DataView.pushLiveBinder (view : DataView) (binderIdent : TSyntax ``Parser.Term.binderIdent) : DataView
-  :=  let liveBinders := view.liveBinders.push binderIdent
-      let binders := view.binders
-      let binders := binders.setArgs (binders.getArgs.push binderIdent)
-      { view with liveBinders, binders, }
+/-- Push a new live binder onto the view. -/
+def DataView.pushLiveBinder (view : DataView) (binderIdent : TSyntax ``Parser.Term.binderIdent) : DataView :=
+  let liveBinders := view.liveBinders.push binderIdent
+  let binders := view.binders.setArgs (view.binders.getArgs.push binderIdent)
+  { view with liveBinders, binders }
 
-def DataView.popLiveBinder (view : DataView) : DataView
-  :=  if view.liveBinders.size == 0 then
-        view
-      else
-        let liveBinders := view.liveBinders.pop
-        let binders := view.binders
-        let binders := binders.setArgs (binders.getArgs.pop)
-        { view with liveBinders, binders, }
+/-- Pop the last live binder from the view. -/
+def DataView.popLiveBinder (view : DataView) : DataView :=
+  if view.liveBinders.size == 0 then
+    view
+  else
+    let liveBinders := view.liveBinders.pop
+    let binders := view.binders.setArgs (view.binders.getArgs.pop)
+    { view with liveBinders, binders }
+
+/-- Replace the constructors in the view. -/
+def DataView.setCtors (view : DataView) (ctors : Array CtorView) : DataView :=
+  { view with ctors }
+
+/-- Add a suffix to the declaration name. -/
+def DataView.addDeclNameSuffix (view : DataView) (suffix : String) : DataView :=
+  let declName := Name.mkStr view.declName suffix
+  let declId := mkNode ``Parser.Command.declId #[mkIdent declName, mkNullNode]
+  let shortDeclName := Name.mkSimple suffix
+  { view with declName, declId, shortDeclName }
 
 
-def DataView.setCtors (view : DataView) (ctors : Array CtorView) : DataView
-  :=  { view with ctors, }
-
-
-
-def DataView.addDeclNameSuffix (view : DataView) (suffix : String) : DataView
-  :=  let declName := Name.mkStr view.declName suffix
-      let declId   := mkNode ``Parser.Command.declId #[mkIdent declName, mkNullNode]
-      let shortDeclName := Name.mkSimple suffix
-      { view with declName, declId, shortDeclName }
-
+/-! ## Expected Type Construction -/
 
 /--
   Returns the fully applied form of the type to be defined.
+
   The `name` parameter allows the user to control what the const at the bottom of the type is.
   This lets the user get types that have the same parameters such as the DeepThunk types.
 -/
 def DataView.getExpectedTypeWithName (view : DataView) (name : Name) : Term :=
   Macro.getBinderIdents view.binders.getArgs false |> Syntax.mkApp (mkIdent name)
 
-/-- Returns the fully applied form of the type to be defined -/
+/-- Returns the fully applied form of the type to be defined. -/
 def DataView.getExpectedType (view : DataView) : Term :=
   view.getExpectedTypeWithName view.shortDeclName
 
-/-- Returns the fully applied, explicit (`@`) form of the type to be defined -/
-def DataView.getExplicitExpectedType (view : DataView) : CommandElabM Term
-  :=  let args := Macro.getBinderIdents view.binders.getArgs true
-      `(
-        @$(mkIdent view.shortDeclName):ident $args:term*
-      )
+/-- Returns the fully applied, explicit (`@`) form of the type to be defined. -/
+def DataView.getExplicitExpectedType (view : DataView) : CommandElabM Term :=
+  let args := Macro.getBinderIdents view.binders.getArgs true
+  `(@$(mkIdent view.shortDeclName):ident $args:term*)
 
-/-! ## MessageData -/
+/-! ## MessageData Instances -/
 
 instance : ToMessageData CtorView where
   toMessageData ctor := m!"\{\
@@ -218,22 +253,18 @@ instance : ToString DataView where
   binders         := {view.binders         },
   type?           := {view.type?},
   ctors           := {ctors},
-  derivingClasses := TODO,
+  derivingClasses := <omitted>,
   command         := {view.command         },
   liveBinders     := {view.liveBinders     },
   deadBinders     := {view.deadBinders     },
   deadBinderNames := {view.deadBinderNames },
 }"
 
-
-/-
-  # Parsing syntax into a view
--/
+/-! ## Parsing Syntax to View -/
 
 
 /--
-  Raises (hopefully) more informative errors when `data` or `codata` are used with unsupported
-  specifications
+  Raises informative errors when `data` or `codata` are used with unsupported specifications.
 -/
 def DataView.doSanityChecks (view : DataView) : CommandElabM Unit := do
   if view.liveBinders.isEmpty then
@@ -245,20 +276,16 @@ def DataView.doSanityChecks (view : DataView) : CommandElabM Unit := do
     else
       throwErrorAt view.binders "You should mark some variables as live by removing the type ascription (they will be automatically inferred as `Type _`), or if you don't have variables of type `Type _`, you probably want an `inductive` type"
 
-  -- TODO: remove once dead variables are fully supported
-  if !view.deadBinders.isEmpty then
-    dbg_trace "Dead variables are not fully supported yet"
-
-
-  -- TODO: make this more intelligent. In particular, allow types like `Type`, `Type 3`, or `Type u`
-  --       and only throw an error if the user tries to define a family of types
+  -- TODO: Allow types like `Type`, `Type 3`, or `Type u` and only throw an error for indexed families
   match view.type? with
   | some t => throwErrorAt t "Unexpected type; type will be automatically inferred. Note that inductive families are not supported due to inherent limitations of QPFs"
   | none => pure ()
 
 
-/-
-  Heavily based on `inductiveSyntaxToView` from Lean.Elab.Inductive
+/--
+  Parse a `data` or `codata` syntax node into a `DataView`.
+
+  This is heavily based on `inductiveSyntaxToView` from `Lean.Elab.Inductive`.
 -/
 def dataSyntaxToView (modifiers : Modifiers) (decl : Syntax) : CommandElabM DataView :=
   withQPFTraceNode "dataSyntaxToView" (tag := "dataSyntaxToView") <| do

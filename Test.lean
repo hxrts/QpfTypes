@@ -1,6 +1,7 @@
 import Test.Arrow
 import Test.Comp
 import Test.CoTree
+import Test.CombinedFeatures
 import Test.Dead
 import Test.DeadWrap
 import Test.List

@@ -1,3 +1,18 @@
+/-
+# Recursor Generation
+
+This file generates recursors (elimination principles) for `data` types.
+The generated recursors include:
+
+- `ind`: Induction principle for `Prop`-valued motives (marked with `@[induction_eliminator]`)
+- `rec`: Recursor for `Type`-valued motives
+- `cases`: Case analysis for `Prop` (marked with `@[cases_eliminator]`)
+- `casesType`: Case analysis for `Type`
+
+These recursors wrap the underlying `MvQPF.Fix.ind` and `MvQPF.Fix.drec` functions,
+providing a more natural interface that matches the shape constructors.
+-/
+
 import Qpf.Macro.Data.RecForm
 import Qpf.Macro.Data.View
 import Qpf.Macro.Common
@@ -10,25 +25,31 @@ open Lean.Parser.Tactic (inductionAlt)
 
 open Macro (withQPFTraceNode elabCommandAndTrace)
 
+/-! ## Parser Aliases -/
+
+/-- Flatten a name for use as an argument name. -/
 def flattenForArg (n : Name) := Name.str .anonymous $ n.toStringWithSep "_" true
 
-/-- Both `bracketedBinder` and `matchAlts` have optional arguments,
-which cause them to not by recognized as parsers in quotation syntax
-(that is, ``` `(bracketedBinder| ...) ``` does not work).
-To work around this, we define aliases that force the optional argument to it's default value,
-so that we can write ``` `(bb| ...) ```instead. -/
+/--
+  Parser aliases to work around optional arguments in quotation syntax.
+
+  Both `bracketedBinder` and `matchAlts` have optional arguments which prevent them
+  from being recognized in quotation syntax like `` `(bracketedBinder| ...) ``.
+  These aliases force the optional argument to its default value.
+-/
 abbrev bb            : Parser := bracketedBinder
 abbrev matchAltExprs : Parser := matchAlts
 
-/- Since `bb` and `matchAltExprs` are aliases for `bracketedBinder`, resp. `matchAlts`,
-we can safely coerce syntax of these categories  -/
+-- Coercions for the parser aliases
 instance : Coe (TSyntax ``bb) (TSyntax ``bracketedBinder)      where coe x := ⟨x.raw⟩
 instance : Coe (TSyntax ``matchAltExprs) (TSyntax ``matchAlts) where coe x := ⟨x.raw⟩
+
+/-! ## Helper Functions -/
 
 section
 variable {m} [Monad m] [MonadQuotation m] [MonadError m] [MonadTrace m] [AddMessageContext m]
 
-/-- Generate the binders for the different recursors -/
+/-- Generate the binders for recursor arguments based on recursion forms. -/
 def mkRecursorBinder
     (rec_type : Term) (name : Name)
     (form : List RecursionForm)
@@ -50,23 +71,27 @@ def mkRecursorBinder
 
   `(bb | ($(mkIdent $ flattenForArg name) : $ty))
 
-def toEqLenNames     (x : Array α) : m $ Array Ident := x.mapM (fun _ => mkIdent <$> mkFreshBinderName)
-def listToEqLenNames (x : List α)  : m $ Array Ident := toEqLenNames x.toArray
+/-- Generate an array of fresh identifiers with the same length as the input. -/
+def toEqLenNames (x : Array α) : m (Array Ident) := x.mapM (fun _ => mkIdent <$> mkFreshBinderName)
 
-/-- If the array is a singleton then this can be yielded by the proof,
-otherwise it will be a n-ary product  -/
+/-- Generate an array of fresh identifiers with the same length as the input list. -/
+def listToEqLenNames (x : List α) : m (Array Ident) := toEqLenNames x.toArray
+
+/-- Wrap an array of terms: singleton arrays remain as-is, otherwise create an n-ary product. -/
 def wrapIfNotSingle (arr : TSyntaxArray `term) : m Term :=
   if let #[s] := arr then `($s)
   else `(⟨$arr,*⟩)
 
-/-- This function behaves like reduce but is specialized for TSyntaxes.
-It is used to insert ∧s between entries -/
+/-- Fold a list of syntax nodes with a binary operation (used for inserting `∧` between entries). -/
 def seq (f : TSyntax kx → TSyntax kx → m (TSyntax kx)) : List (TSyntax kx) → m (TSyntax kx)
   | [hd] => pure hd
   | hd :: tl => do f hd (← seq f tl)
   | [] => throwError "Expected at least one value for interspersing"
 
-def generateIndBody (ctors : Array (Name × List RecursionForm)) (includeMotive : Bool) : m $ TSyntax ``matchAlts := do
+/-! ## Match Body Generation -/
+
+/-- Generate match alternatives for induction/cases eliminators. -/
+def generateIndBody (ctors : Array (Name × List RecursionForm)) (includeMotive : Bool) : m (TSyntax ``matchAlts) := do
   let deeper: (TSyntaxArray ``matchAlt) ← ctors.mapM fun ⟨outerCase, form⟩ => do
     let callName := mkIdent $ flattenForArg outerCase
     let outerCaseId := mkIdent $ `Shape ++ outerCase
@@ -119,7 +144,8 @@ def generateIndBody (ctors : Array (Name × List RecursionForm)) (includeMotive 
 
   `(matchAltExprs| $deeper:matchAlt* )
 
-def generateRecBody (ctors : Array (Name × List RecursionForm)) (includeMotive : Bool) : m $ TSyntax ``matchAlts := do
+/-- Generate match alternatives for the recursor (destructuring recursive results). -/
+def generateRecBody (ctors : Array (Name × List RecursionForm)) (includeMotive : Bool) : m (TSyntax ``matchAlts) := do
   let deeper: (TSyntaxArray ``matchAlt) ← ctors.mapM fun ⟨outerCase, form⟩ => do
     let callName := mkIdent $ flattenForArg outerCase
     let outerCaseId := mkIdent $ `Shape ++ outerCase
@@ -150,6 +176,17 @@ def generateRecBody (ctors : Array (Name × List RecursionForm)) (includeMotive 
 
   `(matchAltExprs| $deeper:matchAlt*)
 
+/-! ## Main Recursor Generation -/
+
+/--
+  Generate all recursors for a `data` type.
+
+  This generates four elimination principles:
+  - `ind`: Induction for `Prop` (with `@[induction_eliminator]`)
+  - `rec`: Recursion for `Type _`
+  - `cases`: Case analysis for `Prop` (with `@[cases_eliminator]`)
+  - `casesType`: Case analysis for `Type`
+-/
 def genRecursors (view : DataView) : CommandElabM Unit :=
   withQPFTraceNode "attempting to generate recursors for datatype"
     (tag := "genRecursors") <| do
