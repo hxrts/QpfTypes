@@ -302,6 +302,13 @@ private def isAllowedExplicitType (stx : Syntax) : Bool :=
   let k := stx.getKind
   k == ``Parser.Term.type || k == ``Parser.Term.sort || k == ``Parser.Term.prop
 
+private def tryElabType (stx : Syntax) : CommandElabM (Option Expr) := do
+  try
+    let ty ← runTermElabM fun _ => Term.elabType stx
+    pure (some ty)
+  catch _ =>
+    pure none
+
 
 /--
   Raises informative errors when `data` or `codata` are used with unsupported specifications.
@@ -318,10 +325,16 @@ def DataView.doSanityChecks (view : DataView) : CommandElabM Unit := do
 
   match view.type? with
   | some t =>
+      let ty? ← tryElabType t
+      if let some ty := ty? then
+        if ty.isForall then
+          throwErrorAt t m!"Indexed families are not supported by QPFs. Got function type: {ty}"
+        unless ty.isSort do
+          throwErrorAt t m!"Explicit result type must be a sort (`Type`, `Sort`, or `Prop`). Got: {ty}"
       if isAllowedExplicitType t then
         pure ()
       else
-        throwErrorAt t "Only explicit result types of the form `Type`, `Type u`, `Type n`, or `Sort u` are supported. Indexed families (e.g., `Nat → Type`) are not supported by QPFs."
+        throwErrorAt t "Only explicit result types of the form `Type`, `Type u`, `Type n`, `Type _`, `Prop`, or `Sort u` are supported. Indexed families (e.g., `Nat → Type`) are not supported by QPFs."
   | none => pure ()
 
 

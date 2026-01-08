@@ -28,8 +28,13 @@ data ListSort.{u} α : Sort (u+1) where
 
 #check @ListSort
 
+data WrapProp (α : Type) : Prop where
+  | intro : WrapProp α
+
+#check WrapProp
+
 /--
-error: Only explicit result types of the form `Type`, `Type u`, `Type n`, or `Sort u` are supported. Indexed families (e.g., `Nat → Type`) are not supported by QPFs.
+error: Indexed families are not supported by QPFs. Got function type: Nat → Type
 -/
 #guard_msgs in
 data BadVec α : Nat → Type where
