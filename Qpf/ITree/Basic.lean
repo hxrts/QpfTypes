@@ -63,6 +63,10 @@ namespace ITree
 ## Corecursion and Elimination
 -/
 
+/-- The ITree base functor is a QPF (derived from the macro-generated polynomial). -/
+instance instMvQPF_ITreeBase {α : Type} : MvQPF (TypeFun.ofCurried (ITree.Base α)) := by
+  infer_instance
+
 /-- Corecursion principle for ITrees.
 
 Given a transition function `f : β → ITree.Base α ε ρ β` and initial state `b : β`,
