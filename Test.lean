@@ -6,6 +6,7 @@ import Test.Dead
 import Test.DeadWrap
 import Test.ExplicitTypeAnnotations
 import Test.ITreeBaseQpf
+import Test.CodataCorec
 import Test.List
 import Test.Misc
 import Test.Tree

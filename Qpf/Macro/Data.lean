@@ -724,6 +724,36 @@ def elabData : CommandElab := fun stx =>
     catch e =>
       trace[QPF] m!"Failed to generate recursors.\
         \n\n{e.toMessageData}"
+  else
+    -- For codata, emit a corecursor specialized to the generated base functor.
+    try
+      let corecId := mkIdent (view.shortDeclName ++ `corec)
+      let baseId ← addSuffixToDeclIdent view.declId "Base"
+      let liveBinders : TSyntaxArray ``Parser.Term.bracketedBinder :=
+        view.liveBinders.raw.map TSyntax.mk
+      let binders : TSyntaxArray ``Parser.Term.bracketedBinder :=
+        view.deadBinders ++ liveBinders
+      let deadBinderTerms : Array Term := view.deadBinderNames.map fun n => TSyntax.mk n.raw
+      let liveBinderTerms : Array Term := view.liveBinders.raw.map TSyntax.mk
+      let allBinderTerms : Array Term := deadBinderTerms ++ liveBinderTerms
+      let stateName ← Elab.Term.mkFreshBinderName
+      let stateId := mkIdent stateName
+      let baseWithParams ← allBinderTerms.foldlM
+        (fun acc param => `($acc $param))
+        baseId
+      let baseWithState ← `($baseWithParams $stateId:ident)
+      let baseForF ← deadBinderTerms.foldlM
+        (fun acc n => `($acc $n))
+        baseId
+      let recType := view.getExpectedType
+      elabCommandAndTrace (header := "elaborating corecursor …") <|← `(
+        def $corecId:ident $binders:bracketedBinder* {$stateId:ident : Type _}
+            (f : $stateId:ident → $baseWithState) (b : $stateId:ident) : $recType :=
+          MvQPF.Cofix.corec (F := TypeFun.ofCurried $baseForF) f b
+      )
+    catch e =>
+      trace[QPF] m!"Failed to generate corecursor.\
+        \n\n{e.toMessageData}"
 
 
 end Data.Command
