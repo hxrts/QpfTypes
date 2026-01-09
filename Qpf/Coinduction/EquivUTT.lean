@@ -5,7 +5,7 @@ import Qpf.Coinduction.Protocol
 
 This module defines weak bisimulation (EquivUTT) and its supporting predicates
 purely in terms of the abstract `CoinductiveTreeProtocol`.
--/-
+-/
 
 namespace Coinduction
 
