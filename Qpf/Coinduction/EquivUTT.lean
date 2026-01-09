@@ -106,6 +106,60 @@ theorem EquivUTT.trans
     EquivUTT (T := T) x y → EquivUTT (T := T) y z → EquivUTT (T := T) x z := by
   sorry
 
+/-!
+### Transitivity Subproblems (PACO-focused)
+
+These lemmas correspond to the stuck cases in the transitivity proof and are
+intended to be solved using PACO/companion techniques.
+-/
+
+/-- tau-tau case for transitivity. -/
+theorem trans_tau_case
+    {T : Type → Type → Type → Type} [CoinductiveTreeProtocol T]
+    {α ε ρ : Type}
+    {R₁ R₂ : T α ε ρ → T α ε ρ → Prop}
+    {x y : T α ε ρ} {c : T α ε ρ}
+    (h₁ : R₁ x y)
+    (hR₂ : R₂ (tau y) c)
+    (isFixpoint₂ : ∀ a b, R₂ a b → F (T := T) R₂ a b) :
+    F (T := T) (composeRel (T := T) (α := α) (ε := ε) (ρ := ρ) R₁ R₂) (tau x) c := by
+  sorry
+
+/-- taur case for transitivity. -/
+theorem trans_taur_case
+    {T : Type → Type → Type → Type} [CoinductiveTreeProtocol T]
+    {α ε ρ : Type}
+    {R₁ R₂ : T α ε ρ → T α ε ρ → Prop}
+    {a y : T α ε ρ} {c : T α ε ρ}
+    (h₁ : R₁ a y)
+    (hR₂ : R₂ (tau y) c)
+    (isFixpoint₂ : ∀ a b, R₂ a b → F (T := T) R₂ a b) :
+    F (T := T) (composeRel (T := T) (α := α) (ε := ε) (ρ := ρ) R₁ R₂) a c := by
+  sorry
+
+/-- ret case for transitivity. -/
+theorem trans_ret_case
+    {T : Type → Type → Type → Type} [CoinductiveTreeProtocol T]
+    {α ε ρ : Type}
+    {R₂ : T α ε ρ → T α ε ρ → Prop}
+    {r : ρ} {c : T α ε ρ}
+    (hR₂ : R₂ (ret r) c)
+    (isFixpoint₂ : ∀ a b, R₂ a b → F (T := T) R₂ a b) :
+    F (T := T) (fun a c => a = ret r ∧ R₂ (ret r) c) (ret r) c := by
+  sorry
+
+/-- vis case for transitivity. -/
+theorem trans_vis_case
+    {T : Type → Type → Type → Type} [CoinductiveTreeProtocol T]
+    {α ε ρ : Type}
+    {R₁ R₂ : T α ε ρ → T α ε ρ → Prop}
+    {e : ε} {k₁ k₂ : α → T α ε ρ} {c : T α ε ρ}
+    (hk : ∀ i, R₁ (k₁ i) (k₂ i))
+    (hR₂ : R₂ (vis e k₂) c)
+    (isFixpoint₂ : ∀ a b, R₂ a b → F (T := T) R₂ a b) :
+    F (T := T) (composeRel (T := T) (α := α) (ε := ε) (ρ := ρ) R₁ R₂) (vis e k₁) c := by
+  sorry
+
 /-- Inversion lemma for `F` with `tau` on the left. -/
 theorem F_tau_inv
     {T : Type → Type → Type → Type} [CoinductiveTreeProtocol T]
