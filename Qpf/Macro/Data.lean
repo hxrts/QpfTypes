@@ -58,10 +58,13 @@ private def getUniverseDeps (e : Expr) : MetaM (List Name) := do
     | _ => pure []
   visit e
 
-private def computeResultUniverse (usedUnivs : List Name) : Level :=
-  match usedUnivs with
-  | [] => .zero
-  | u :: us => us.foldl (fun acc n => .max acc (.param n)) (.param u)
+private def computeResultUniverse (usedUnivs : List Name) (explicit? : Option Level) : Level :=
+  match explicit? with
+  | some u => u
+  | none =>
+      match usedUnivs with
+      | [] => .zero
+      | u :: us => us.foldl (fun acc n => .max acc (.param n)) (.param u)
 
 /--
   Given a natural number `n`, produce a sequence of `n` calls of `.fs`, ending in `.fz`.
@@ -210,7 +213,7 @@ def mkHeadT (view : InductiveView) (ctorArgs : Array CtorArgs) : CommandElabM Na
   -- We keep those dead parameters for HeadT
 
   -- Universe polymorphic HeadT: preserve levelNames from the original view
-  let resultLevel := computeResultUniverse view.levelNames
+  let resultLevel := computeResultUniverse view.levelNames view.explicitUniverse?
   let headTType ← runTermElabM fun _ => do
     delab (mkSort (Level.succ resultLevel))
 
@@ -240,7 +243,7 @@ def mkChildT (view : InductiveView) (r : Replace) (headTName : Name) (ctorArgs :
   let (declName, declId, _shortDeclName) ← addSuffixToDeclId view.declId "ChildT"
   withQPFTraceNode m!"defining `{declName}`" (tag := "mkChildT") <| do
 
-  let resultLevel := computeResultUniverse view.levelNames
+  let resultLevel := computeResultUniverse view.levelNames view.explicitUniverse?
   let target_type ←
     runTermElabM fun _ => do
       let tv := mkApp (mkConst ``TypeVec [resultLevel]) (mkNatLit r.arity)
@@ -563,7 +566,7 @@ def mkShape (view : DataView) : TermElabM MkShapeResult := do
     let deadBinderIdents := Macro.getBinderIdents viewDeadOnly.binders.getArgs false
     let pfType ←
       runTermElabM fun _ => do
-        let resultLevel := computeResultUniverse view.liveLevelNames
+        let resultLevel := computeResultUniverse view.liveLevelNames view.explicitUniverse?
         let tp := mkApp (mkConst ``MvPFunctor [resultLevel]) (mkNatLit r.arity)
         delab tp
 

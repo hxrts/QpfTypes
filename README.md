@@ -83,7 +83,19 @@ You can clone https://github.com/alexkeizer/qpf4-example for an example project 
 
 # Organization
 
-TODO
+This repository focuses on the QPF-based (co)datatype framework, including:
+- the `data` / `codata` macros
+- the QPF encodings and core combinators
+- concrete coinductive structures (e.g. `ITree`)
+
+Related packages:
+- `paco-lean`: **generic** parametrized coinduction library (no QPF/ITree deps)
+- `paco-qpf`: **integration** layer that uses paco to prove QPF/ITree results
+
+Separation of concerns:
+- **QpfTypes**: types, macros, QPF machinery, domain-specific proofs
+- **paco-lean**: pure paco infrastructure (relations, gpaco/up-to, companion)
+- **paco-qpf**: bridges that depend on both sides (e.g. paco-based trans proofs)
 
 
 
@@ -98,4 +110,3 @@ on quotients of polynomial functors](https://eprints.illc.uva.nl/id/eprint/2239/
 The foundations of this library come from [avigad/qpf](https://github.com/avigad/qpf).
 There it was described as
 >  This repository contains a formalization of data type constructions in Lean, by Jeremy Avigad, Mario Carneiro, and Simon Hudon. A       preliminary version of the work is described in this talk: [http://www.andrew.cmu.edu/user/avigad/Talks/qpf.pdf](http://www.andrew.cmu.edu/user/avigad/Talks/qpf.pdf).
-

@@ -198,20 +198,86 @@ theorem CanDo.toVisPathBounded
 theorem EquivUTT.refl
     {T : Type → Type → Type → Type} [CoinductiveTreeProtocolWithCases T]
     {α ε ρ : Type} (x : T α ε ρ) : EquivUTT (T := T) x x := by
-  sorry
+  apply EquivUTT.intro (R := (· = ·))
+  · intro a b hEq
+    subst hEq
+    -- use cases axiom on a
+    rcases (CoinductiveTreeProtocolWithCases.cases (T := T) (α := α) (ε := ε) (ρ := ρ) a) with
+    | ⟨r, hr⟩ =>
+        subst hr
+        exact F.ret
+    | Or.inr h =>
+        rcases h with ⟨t, ht⟩ | ⟨e, k, hv⟩
+        · subst ht
+          exact F.tau rfl
+        · subst hv
+          exact F.vis (fun _ => rfl)
+  · intro a r b hterm hEq
+    subst hEq
+    exact Terminates_implies_RetPathBounded (T := T) (α := α) (ε := ε) (ρ := ρ) a r hterm
+  · intro a r b hterm hEq
+    subst hEq
+    exact Terminates_implies_RetPathBounded (T := T) (α := α) (ε := ε) (ρ := ρ) a r hterm
+  · intro e k₁ b hEq
+    subst hEq
+    exact ⟨0, ⟨k₁, rfl, fun _ => rfl⟩⟩
+  · intro e k₂ a hEq
+    subst hEq
+    exact ⟨0, k₂, ⟨k₂, rfl, fun _ => rfl⟩, fun _ => rfl⟩
+  · intro e k₁ a b hcando hEq
+    subst hEq
+    have ⟨n, hn⟩ := CanDo.toVisPathBounded (T := T) (α := α) (ε := ε) (ρ := ρ)
+      (b := a) (e := e) (k₂ := k₁) (R := (· = ·)) (k₁ := k₁) (fun _ => rfl) hcando
+    exact ⟨n, hn⟩
+  · intro e k₂ a b hcando hEq
+    subst hEq
+    have ⟨n, hn⟩ := CanDo.toVisPathBounded (T := T) (α := α) (ε := ε) (ρ := ρ)
+      (b := a) (e := e) (k₂ := k₂) (R := flip (· = ·)) (k₁ := k₂) (fun _ => rfl) hcando
+    exact ⟨n, k₂, hn, fun _ => rfl⟩
+  · rfl
 
 /-- Symmetry: EquivUTT x y → EquivUTT y x. -/
 theorem EquivUTT.symm
     {T : Type → Type → Type → Type} [CoinductiveTreeProtocolWithCases T]
     {α ε ρ : Type} {x y : T α ε ρ} :
     EquivUTT (T := T) x y → EquivUTT (T := T) y x := by
-  sorry
+  intro h
+  rcases h with ⟨R, hfix, htb, htb', hvb, hvb', hcb, hcb', hR⟩
+  apply EquivUTT.intro (R := flip R)
+  · intro a b hflip
+    cases hfix b a hflip <;> constructor <;> assumption
+  · intro a r b hterm hflip
+    exact htb' b r a hterm hflip
+  · intro a r b hterm hflip
+    exact htb b r a hterm hflip
+  · intro e k₁ b hflip
+    have ⟨n, k', hvp, _⟩ := hvb' e k₁ b hflip
+    exact ⟨n, hvp⟩
+  · intro e k₂ a hflip
+    have ⟨n, hvp⟩ := hvb e k₂ a hflip
+    have ⟨k₁, hk⟩ := VisPathBounded.getCont (T := T) (α := α) (ε := ε) (ρ := ρ)
+      (n := n) (e := e) (R := R) (k₁ := k₂) (b := a) hvp
+    exact ⟨n, k₁, hvp, hk⟩
+  · intro e k₁ a b hcando hflip
+    have ⟨n, k', hvp, _⟩ := hcb' e k₁ b a hcando hflip
+    exact ⟨n, hvp⟩
+  · intro e k₂ a b hcando hflip
+    have ⟨n, hvp⟩ := hcb e k₂ b a hcando hflip
+    have ⟨k₁, hk⟩ := VisPathBounded.getCont (T := T) (α := α) (ε := ε) (ρ := ρ)
+      (n := n) (e := e) (R := R) (k₁ := k₂) (b := a) hvp
+    exact ⟨n, k₁, hvp, hk⟩
+  · exact hR
 
 /-- Transitivity: EquivUTT x y → EquivUTT y z → EquivUTT x z. -/
 theorem EquivUTT.trans
     {T : Type → Type → Type → Type} [CoinductiveTreeProtocolWithCases T]
     {α ε ρ : Type} {x y z : T α ε ρ} :
     EquivUTT (T := T) x y → EquivUTT (T := T) y z → EquivUTT (T := T) x z := by
+  intro h1 h2
+  -- Requires PACO/companion reasoning; not provable from current axioms.
+  -- Keep as placeholder until PACO infrastructure is added.
+  cases h1
+  cases h2
   sorry
 
 /-!
@@ -231,7 +297,20 @@ theorem trans_tau_case
     (hR₂ : R₂ (tau y) c)
     (isFixpoint₂ : ∀ a b, R₂ a b → F (T := T) R₂ a b) :
     F (T := T) (composeRel (T := T) (α := α) (ε := ε) (ρ := ρ) R₁ R₂) (tau x) c := by
-  sorry
+  -- PACO/companion needed to handle the taur branch.
+  cases isFixpoint₂ _ _ hR₂ with
+  | tau h =>
+      -- c = tau y', R₂ y y'
+      exact F.tau ⟨_, h₁, h⟩
+  | taul h =>
+      exact F.taul ⟨_, h₁, h⟩
+  | taur h =>
+      -- requires R₁ (tau x) (tau y) closure
+      sorry
+  | ret =>
+      cases (ret_ne_tau (T := T) (r := ?_) (t := y))  -- impossible
+  | vis _ =>
+      cases (ret_ne_vis (T := T) (r := ?_) (e := ?_) (k := ?_))  -- impossible
 
 /-- taur case for transitivity. -/
 theorem trans_taur_case
@@ -243,7 +322,20 @@ theorem trans_taur_case
     (hR₂ : R₂ (tau y) c)
     (isFixpoint₂ : ∀ a b, R₂ a b → F (T := T) R₂ a b) :
     F (T := T) (composeRel (T := T) (α := α) (ε := ε) (ρ := ρ) R₁ R₂) a c := by
-  sorry
+  cases isFixpoint₂ _ _ hR₂ with
+  | tau h =>
+      -- c = tau y', R₂ y y'
+      exact F.taur ⟨_, h₁, h⟩
+  | taul h =>
+      -- c arbitrary, need F R' a c directly
+      sorry
+  | taur h =>
+      -- c = tau y', R₂ (tau y) y'
+      exact F.taur ⟨_, h₁, h⟩
+  | ret =>
+      cases (ret_ne_tau (T := T) (r := ?_) (t := y))
+  | vis _ =>
+      cases (ret_ne_vis (T := T) (r := ?_) (e := ?_) (k := ?_))
 
 /-- ret case for transitivity. -/
 theorem trans_ret_case
@@ -254,7 +346,17 @@ theorem trans_ret_case
     (hR₂ : R₂ (ret r) c)
     (isFixpoint₂ : ∀ a b, R₂ a b → F (T := T) R₂ a b) :
     F (T := T) (fun a c => a = ret r ∧ R₂ (ret r) c) (ret r) c := by
-  sorry
+  cases isFixpoint₂ _ _ hR₂ with
+  | ret =>
+      exact F.ret
+  | taur h =>
+      exact F.taur ⟨rfl, h⟩
+  | tau h =>
+      cases (ret_ne_tau (T := T) (r := r) (t := ?_))
+  | taul h =>
+      cases (ret_ne_tau (T := T) (r := r) (t := ?_))
+  | vis _ =>
+      cases (ret_ne_vis (T := T) (r := r) (e := ?_) (k := ?_))
 
 /-- vis case for transitivity. -/
 theorem trans_vis_case
@@ -266,7 +368,17 @@ theorem trans_vis_case
     (hR₂ : R₂ (vis e k₂) c)
     (isFixpoint₂ : ∀ a b, R₂ a b → F (T := T) R₂ a b) :
     F (T := T) (composeRel (T := T) (α := α) (ε := ε) (ρ := ρ) R₁ R₂) (vis e k₁) c := by
-  sorry
+  cases isFixpoint₂ _ _ hR₂ with
+  | vis hk =>
+      exact F.vis (fun i => ⟨_, hk i, hk i?⟩) -- placeholder
+  | taur h =>
+      exact F.taur ⟨_, ?_, h⟩
+  | tau h =>
+      cases (tau_ne_vis (T := T) (t := ?_) (e := e) (k := k₂))
+  | taul h =>
+      cases (tau_ne_vis (T := T) (t := ?_) (e := e) (k := k₂))
+  | ret =>
+      cases (ret_ne_vis (T := T) (r := ?_) (e := e) (k := k₂))
 
 /-- Inversion lemma for `F` with `tau` on the left. -/
 theorem F_tau_inv
@@ -276,7 +388,11 @@ theorem F_tau_inv
     (∃ y, c = tau y ∧ R x y) ∨
     R x c ∨
     (∃ y, c = tau y ∧ F (T := T) R (tau x) y) := by
-  sorry
+  intro hF
+  cases hF with
+  | tau h => exact Or.inl ⟨_, rfl, h⟩
+  | taul h => exact Or.inr (Or.inl h)
+  | taur h => exact Or.inr (Or.inr ⟨_, rfl, F.taur h⟩)
 
 /-- Inversion lemma for `F` with `ret` on the left. -/
 theorem F_ret_inv
@@ -284,7 +400,10 @@ theorem F_ret_inv
     {α ε ρ : Type} {R : T α ε ρ → T α ε ρ → Prop} {r : ρ} {c : T α ε ρ} :
     F (T := T) R (ret r) c →
     c = ret r ∨ (∃ y, c = tau y ∧ F (T := T) R (ret r) y) := by
-  sorry
+  intro hF
+  cases hF with
+  | ret => exact Or.inl rfl
+  | taur h => exact Or.inr ⟨_, rfl, F.taur h⟩
 
 /-- Inversion lemma for `F` with `vis` on the left. -/
 theorem F_vis_inv
@@ -294,6 +413,9 @@ theorem F_vis_inv
     F (T := T) R (vis e k) c →
     (∃ k', c = vis e k' ∧ ∀ i, R (k i) (k' i)) ∨
     (∃ y, c = tau y ∧ F (T := T) R (vis e k) y) := by
-  sorry
+  intro hF
+  cases hF with
+  | vis hk => exact Or.inl ⟨_, rfl, hk⟩
+  | taur h => exact Or.inr ⟨_, rfl, F.taur h⟩
 
 end Coinduction

@@ -92,6 +92,8 @@ structure DataView where
   levelNames      : List Name
   binders         : Syntax
   type?           : Option Syntax
+  /-- Explicit result universe, when a result type annotation is provided. -/
+  explicitUniverse? : Option Level := none
   ctors           : Array CtorView
   derivingClasses : Array DerivingClassView
   command         : DataCommand
@@ -244,6 +246,7 @@ instance : ToMessageData DataView where
   levelNames      := {view.levelNames      },
   binders         := {view.binders         },
   type?           := {view.type?},
+  explicitUniverse? := {view.explicitUniverse?},
   ctors           := {view.ctors},
   derivingClasses := <omitted>,
   command         := {view.command         },
@@ -275,6 +278,7 @@ instance : ToString DataView where
   levelNames      := {view.levelNames      },
   binders         := {view.binders         },
   type?           := {view.type?},
+  explicitUniverse? := {view.explicitUniverse?},
   ctors           := {ctors},
   derivingClasses := <omitted>,
   command         := {view.command         },
@@ -313,7 +317,7 @@ private def tryElabType (stx : Syntax) : CommandElabM (Option Expr) := do
 /--
   Raises informative errors when `data` or `codata` are used with unsupported specifications.
 -/
-def DataView.doSanityChecks (view : DataView) : CommandElabM Unit := do
+def DataView.doSanityChecks (view : DataView) : CommandElabM DataView := do
   if view.liveBinders.isEmpty then
     if view.deadBinders.isEmpty then
       if view.command == .Codata then
@@ -323,6 +327,7 @@ def DataView.doSanityChecks (view : DataView) : CommandElabM Unit := do
     else
       throwErrorAt view.binders "You should mark some variables as live by removing the type ascription (they will be automatically inferred as `Type _`), or if you don't have variables of type `Type _`, you probably want an `inductive` type"
 
+  let mut explicitUniverse? := view.explicitUniverse?
   match view.type? with
   | some t =>
       let ty? ← tryElabType t
@@ -331,11 +336,13 @@ def DataView.doSanityChecks (view : DataView) : CommandElabM Unit := do
           throwErrorAt t m!"Indexed families are not supported by QPFs. Got function type: {ty}"
         unless ty.isSort do
           throwErrorAt t m!"Explicit result type must be a sort (`Type`, `Sort`, or `Prop`). Got: {ty}"
+        explicitUniverse? := some ty.sortLevel!
       if isAllowedExplicitType t then
         pure ()
       else
         throwErrorAt t "Only explicit result types of the form `Type`, `Type u`, `Type n`, `Type _`, `Prop`, or `Sort u` are supported. Indexed families (e.g., `Nat → Type`) are not supported by QPFs."
   | none => pure ()
+  pure { view with explicitUniverse? }
 
 
 /--
@@ -402,5 +409,5 @@ def dataSyntaxToView (modifiers : Modifiers) (decl : Syntax) : CommandElabM Data
   withQPFTraceNode "elaborated view …" <| do
     trace[QPF] m!"{view}"
 
-  view.doSanityChecks
+  let view ← view.doSanityChecks
   return view
