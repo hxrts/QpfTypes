@@ -97,6 +97,12 @@ Separation of concerns:
 - **paco-lean**: pure paco infrastructure (relations, gpaco/up-to, companion)
 - **paco-qpf**: bridges that depend on both sides (e.g. paco-based trans proofs)
 
+Proof engineering note:
+- Avoid direct elimination on quotient-encoded coinductive values. Prefer
+  destructor lemmas (e.g. `dest_*`) and F-inversion lemmas for proof steps.
+- For transitivity or substitution-style proofs, use paco/gpaco to avoid
+  nested case analysis on fixed-point unfoldings.
+
 
 
 

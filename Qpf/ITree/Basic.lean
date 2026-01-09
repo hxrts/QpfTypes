@@ -106,11 +106,12 @@ def cases {α ε ρ : Type} {motive : ITree α ε ρ → Sort u}
 ## Notable ITrees
 -/
 
-/-- The diverging tree: an infinite sequence of tau nodes.
-
-`spin` represents non-termination. It satisfies `spin = tau spin`. -/
-def spin : ITree α ε ρ :=
-  corec (fun () => Base.tau ()) ()
+-- TODO: spin requires fixing corec to work with the generated Shape type
+-- /-- The diverging tree: an infinite sequence of tau nodes.
+--
+-- `spin` represents non-termination. It satisfies `spin = tau spin`. -/
+-- def spin : ITree α ε ρ :=
+--   corec (fun () => Shape.tau ()) ()
 
 /-!
 ## Destructor Lemmas

@@ -12,6 +12,9 @@ import Test.CoinductionProtocol
 import Test.EquivUTTAbstract
 import Test.List
 import Test.Misc
+import Test.MutualInductiveSpec
+import Test.MutualCodataSpec
+import Test.MutualDataStub
 import Test.RecOnCasesOn
 import Test.Tree
 -- import Test.Variable

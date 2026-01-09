@@ -758,5 +758,21 @@ def elabData : CommandElab := fun stx =>
       trace[QPF] m!"Failed to generate corecursor.\
         \n\n{e.toMessageData}"
 
+/-
+## Mutual Blocks (data/codata) - DISABLED for Lean 4.27.0-rc1 compatibility
+
+This feature is disabled due to parser compatibility issues with Lean 4.27.0-rc1.
+The `many1` parser syntax has changed and the syntax node registration is incompatible.
+TODO: Re-enable once the syntax is updated for newer Lean versions.
+
+Original implementation:
+```
+open Parser.Command in
+syntax (name := qpf_mutual) "qpf_mutual" ppIndent(many1 declaration) "end" : command
+
+@[command_elab qpf_mutual]
+def elabMutualData : CommandElab := fun stx => ...
+```
+-/
 
 end Data.Command
