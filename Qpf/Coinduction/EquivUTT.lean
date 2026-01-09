@@ -4,9 +4,7 @@ import Qpf.Coinduction.Protocol
 # EquivUTT (Abstract)
 
 This module defines weak bisimulation (EquivUTT) and its supporting predicates
-purely in terms of the abstract `CoinductiveTreeProtocol`. It mirrors the
-statements from `Qpf/Problems/P1/R1_07_1897e3e4-1174-413e-adf1-8c51950d29da-output.lean`
-without committing to any concrete coinductive representation.
+purely in terms of the abstract `CoinductiveTreeProtocol`.
 -/-
 
 namespace Coinduction
@@ -76,7 +74,12 @@ theorem Terminates_implies_RetPathBounded
     {T : Type → Type → Type → Type} [CoinductiveTreeProtocol T]
     {α ε ρ : Type} (t : T α ε ρ) (r : ρ) (h : Terminates (T := T) t r) :
     ∃ n, RetPathBounded (T := T) n r t := by
-  sorry
+  induction h with
+  | ret =>
+      exact ⟨0, rfl⟩
+  | tau _ ih =>
+      obtain ⟨n, hn⟩ := ih
+      exact ⟨n + 1, Or.inr ⟨_, rfl, hn⟩⟩
 
 /-- If a tree can do an event, there is a bounded vis path. -/
 theorem CanDo_implies_VisPathBounded
@@ -84,7 +87,112 @@ theorem CanDo_implies_VisPathBounded
     {α ε ρ : Type} (t : T α ε ρ) (e : ε) (k : α → T α ε ρ)
     (h : CanDo (T := T) t e k) :
     ∃ n, VisPathBounded (T := T) n e Eq k t := by
-  sorry
+  induction h with
+  | vis =>
+      exact ⟨0, ⟨_, rfl, fun _ => rfl⟩⟩
+  | tau _ ih =>
+      obtain ⟨n, hn⟩ := ih
+      exact ⟨n + 1, Or.inr ⟨_, rfl, hn⟩⟩
+
+/-!
+## Generic helper lemmas
+-/
+
+/-- Increasing the bound preserves `RetPathBounded`. -/
+theorem RetPathBounded.mono
+    {T : Type → Type → Type → Type} [CoinductiveTreeProtocol T]
+    {α ε ρ : Type} {n m : Nat} (h : n ≤ m) {r : ρ} {b : T α ε ρ} :
+    RetPathBounded (T := T) n r b → RetPathBounded (T := T) m r b := by
+  induction m generalizing n b with
+  | zero =>
+      intro hrpb
+      simp only [Nat.le_zero] at h
+      exact h ▸ hrpb
+  | succ m ih =>
+      intro hrpb
+      cases n with
+      | zero =>
+          simp only [RetPathBounded] at hrpb
+          exact Or.inl hrpb
+      | succ n =>
+          simp only [RetPathBounded] at hrpb ⊢
+          rcases hrpb with heq | ⟨t, heq, hrec⟩
+          · exact Or.inl heq
+          · exact Or.inr ⟨t, heq, ih (Nat.succ_le_succ_iff.mp h) hrec⟩
+
+/-- Increasing the bound preserves `VisPathBounded`. -/
+theorem VisPathBounded.mono
+    {T : Type → Type → Type → Type} [CoinductiveTreeProtocol T]
+    {α ε ρ : Type} {n m : Nat} (h : n ≤ m)
+    {e : ε} {R : T α ε ρ → T α ε ρ → Prop}
+    {k₁ : α → T α ε ρ} {b : T α ε ρ} :
+    VisPathBounded (T := T) n e R k₁ b → VisPathBounded (T := T) m e R k₁ b := by
+  induction m generalizing n b with
+  | zero =>
+      intro hvpb
+      simp only [Nat.le_zero] at h
+      exact h ▸ hvpb
+  | succ m ih =>
+      intro hvpb
+      cases n with
+      | zero =>
+          simp only [VisPathBounded] at hvpb
+          exact Or.inl hvpb
+      | succ n =>
+          simp only [VisPathBounded] at hvpb ⊢
+          rcases hvpb with hv | ⟨t, heq, hrec⟩
+          · exact Or.inl hv
+          · exact Or.inr ⟨t, heq, ih (Nat.succ_le_succ_iff.mp h) hrec⟩
+
+/-- Extract the reached continuation from `VisPathBounded`. -/
+theorem VisPathBounded.getCont
+    {T : Type → Type → Type → Type} [CoinductiveTreeProtocol T]
+    {α ε ρ : Type} {n : Nat} {e : ε} {R : T α ε ρ → T α ε ρ → Prop}
+    {k₁ : α → T α ε ρ} {b : T α ε ρ} :
+    VisPathBounded (T := T) n e R k₁ b → ∃ k₂ : α → T α ε ρ, ∀ i, R (k₁ i) (k₂ i) := by
+  intro hvpb
+  induction n generalizing b with
+  | zero =>
+      simp only [VisPathBounded] at hvpb
+      obtain ⟨k₂, _, hk⟩ := hvpb
+      exact ⟨k₂, hk⟩
+  | succ n ih =>
+      simp only [VisPathBounded] at hvpb
+      rcases hvpb with ⟨k₂, _, hk⟩ | ⟨t, _, hrec⟩
+      · exact ⟨k₂, hk⟩
+      · exact ih hrec
+
+/-- Convert `RetPathBounded` to `Terminates`. -/
+theorem RetPathBounded.toTerminates
+    {T : Type → Type → Type → Type} [CoinductiveTreeProtocol T]
+    {α ε ρ : Type} {n : Nat} {r : ρ} {b : T α ε ρ} :
+    RetPathBounded (T := T) n r b → Terminates (T := T) b r := by
+  induction n generalizing b with
+  | zero =>
+      intro h
+      simp only [RetPathBounded] at h
+      exact h ▸ .ret
+  | succ n ih =>
+      intro h
+      simp only [RetPathBounded] at h
+      rcases h with heq | ⟨t, heq, hrec⟩
+      · exact heq ▸ .ret
+      · exact heq ▸ .tau (ih hrec)
+
+/-- Convert `CanDo` to `VisPathBounded` with related continuations. -/
+theorem CanDo.toVisPathBounded
+    {T : Type → Type → Type → Type} [CoinductiveTreeProtocol T]
+    {α ε ρ : Type} {b : T α ε ρ} {e : ε} {k₂ : α → T α ε ρ}
+    {R : T α ε ρ → T α ε ρ → Prop} {k₁ : α → T α ε ρ}
+    (hcont : ∀ i, R (k₁ i) (k₂ i)) :
+    CanDo (T := T) b e k₂ → ∃ n, VisPathBounded (T := T) n e R k₁ b := by
+  intro hc
+  induction hc with
+  | vis =>
+      exact ⟨0, ⟨_, rfl, hcont⟩⟩
+  | tau _ ih =>
+      obtain ⟨n, hn⟩ := ih hcont
+      exact ⟨n + 1, Or.inr ⟨_, rfl, hn⟩⟩
 
 /-- Reflexivity: EquivUTT x x. -/
 theorem EquivUTT.refl

@@ -1,4 +1,5 @@
 import Qpf.ITree.Basic
+import Qpf.Coinduction.EquivUTT
 
 /-!
 # Membership-Based Weak Bisimulation
@@ -49,17 +50,15 @@ freely case-analyze proofs of these predicates.
 
 `Terminates t r` holds when `t` eventually reaches `ret r` through zero or more
 tau transitions. This captures the "termination behavior" of a tree. -/
-inductive Terminates : ITree α ε ρ → ρ → Prop
-  | ret : Terminates (.ret r) r
-  | tau : Terminates t r → Terminates (.tau t) r
+abbrev Terminates : ITree α ε ρ → ρ → Prop :=
+  Coinduction.Terminates (T := ITree) (α := α) (ε := ε) (ρ := ρ)
 
 /-- A tree can perform visible event `e` with continuation `k` after some tau steps.
 
 `CanDo t e k` holds when `t` eventually reaches `vis e k` through zero or more
 tau transitions. This captures the "event behavior" of a tree. -/
-inductive CanDo : ITree α ε ρ → ε → (α → ITree α ε ρ) → Prop
-  | vis : CanDo (.vis e k) e k
-  | tau : CanDo t e k → CanDo (.tau t) e k
+abbrev CanDo : ITree α ε ρ → ε → (α → ITree α ε ρ) → Prop :=
+  Coinduction.CanDo (T := ITree) (α := α) (ε := ε) (ρ := ρ)
 
 /-!
 ## Tau-Unwrapping Lemmas

@@ -1,4 +1,5 @@
 import Qpf.ITree.Bisim
+import Qpf.Coinduction.EquivUTT
 
 /-!
 # F-Based Weak Bisimulation (EquivUTT)
@@ -32,76 +33,39 @@ They are used to ensure EquivUTT relations don't have infinite tau chains. -/
 
 /-- `RetPathBounded n r b` holds if `b` reaches `.ret r` within `n` tau steps.
     Defined by recursion on `n`, not on the ITree. -/
-def RetPathBounded (n : ℕ) (r : ρ) (b : ITree α ε ρ) : Prop :=
-  match n with
-  | 0 => b = .ret r
-  | n' + 1 => b = .ret r ∨ ∃ t, b = .tau t ∧ RetPathBounded n' r t
+abbrev RetPathBounded (n : ℕ) (r : ρ) (b : ITree α ε ρ) : Prop :=
+  Coinduction.RetPathBounded (T := ITree) (α := α) (ε := ε) (ρ := ρ) n r b
 
 /-- `VisPathBounded n e R k₁ b` holds if `b` reaches `.vis e k₂` within `n` tau steps
     with R-related continuations. -/
-def VisPathBounded (n : ℕ) (e : ε) (R : ITree α ε ρ → ITree α ε ρ → Prop)
+abbrev VisPathBounded (n : ℕ) (e : ε) (R : ITree α ε ρ → ITree α ε ρ → Prop)
     (k₁ : α → ITree α ε ρ) (b : ITree α ε ρ) : Prop :=
-  match n with
-  | 0 => ∃ k₂, b = .vis e k₂ ∧ ∀ i, R (k₁ i) (k₂ i)
-  | n' + 1 => (∃ k₂, b = .vis e k₂ ∧ ∀ i, R (k₁ i) (k₂ i)) ∨
-              ∃ t, b = .tau t ∧ VisPathBounded n' e R k₁ t
+  Coinduction.VisPathBounded (T := ITree) (α := α) (ε := ε) (ρ := ρ) n e R k₁ b
 
 /-- Increasing the bound preserves RetPathBounded -/
 theorem RetPathBounded.mono {n m : ℕ} (h : n ≤ m) {r : ρ} {b : ITree α ε ρ} :
     RetPathBounded n r b → RetPathBounded m r b := by
-  induction m generalizing n b with
-  | zero =>
-    intro hrpb
-    simp only [Nat.le_zero] at h
-    exact h ▸ hrpb
-  | succ m ih =>
-    intro hrpb
-    cases n with
-    | zero =>
-      simp only [RetPathBounded] at hrpb
-      exact .inl hrpb
-    | succ n =>
-      simp only [RetPathBounded] at hrpb ⊢
-      rcases hrpb with heq | ⟨t, heq, hrec⟩
-      · exact .inl heq
-      · exact .inr ⟨t, heq, ih (Nat.succ_le_succ_iff.mp h) hrec⟩
+  simpa using
+    (Coinduction.RetPathBounded.mono
+      (T := ITree) (α := α) (ε := ε) (ρ := ρ) (n := n) (m := m) h (r := r) (b := b))
 
 /-- Increasing the bound preserves VisPathBounded -/
 theorem VisPathBounded.mono {n m : ℕ} (h : n ≤ m) {e : ε} {R : ITree α ε ρ → ITree α ε ρ → Prop}
     {k₁ : α → ITree α ε ρ} {b : ITree α ε ρ} :
     VisPathBounded n e R k₁ b → VisPathBounded m e R k₁ b := by
-  induction m generalizing n b with
-  | zero =>
-    intro hvpb
-    simp only [Nat.le_zero] at h
-    exact h ▸ hvpb
-  | succ m ih =>
-    intro hvpb
-    cases n with
-    | zero =>
-      simp only [VisPathBounded] at hvpb
-      exact .inl hvpb
-    | succ n =>
-      simp only [VisPathBounded] at hvpb ⊢
-      rcases hvpb with hv | ⟨t, heq, hrec⟩
-      · exact .inl hv
-      · exact .inr ⟨t, heq, ih (Nat.succ_le_succ_iff.mp h) hrec⟩
+  simpa using
+    (Coinduction.VisPathBounded.mono
+      (T := ITree) (α := α) (ε := ε) (ρ := ρ) (n := n) (m := m) h
+      (e := e) (R := R) (k₁ := k₁) (b := b))
 
 /-- Extract the reached continuation from VisPathBounded -/
 theorem VisPathBounded.getCont {n : ℕ} {e : ε} {R : ITree α ε ρ → ITree α ε ρ → Prop}
     {k₁ : α → ITree α ε ρ} {b : ITree α ε ρ} :
     VisPathBounded n e R k₁ b → ∃ k₂ : α → ITree α ε ρ, ∀ i, R (k₁ i) (k₂ i) := by
-  intro hvpb
-  induction n generalizing b with
-  | zero =>
-    simp only [VisPathBounded] at hvpb
-    obtain ⟨k₂, _, hk⟩ := hvpb
-    exact ⟨k₂, hk⟩
-  | succ n ih =>
-    simp only [VisPathBounded] at hvpb
-    rcases hvpb with ⟨k₂, _, hk⟩ | ⟨t, _, hrec⟩
-    · exact ⟨k₂, hk⟩
-    · exact ih hrec
+  simpa using
+    (Coinduction.VisPathBounded.getCont
+      (T := ITree) (α := α) (ε := ε) (ρ := ρ) (n := n)
+      (e := e) (R := R) (k₁ := k₁) (b := b))
 
 /-! ### Conversion between Terminates and RetPathBounded -/
 
@@ -109,26 +73,17 @@ theorem VisPathBounded.getCont {n : ℕ} {e : ε} {R : ITree α ε ρ → ITree 
 theorem Terminates.toRetPathBounded {b : ITree α ε ρ} {r : ρ} :
     Terminates b r → ∃ n, RetPathBounded n r b := by
   intro ht
-  induction ht with
-  | ret => exact ⟨0, rfl⟩
-  | tau _ ih =>
-    obtain ⟨n, hn⟩ := ih
-    exact ⟨n + 1, .inr ⟨_, rfl, hn⟩⟩
+  simpa using
+    (Coinduction.Terminates_implies_RetPathBounded
+      (T := ITree) (α := α) (ε := ε) (ρ := ρ) b r ht)
 
 /-- RetPathBounded implies Terminates -/
 theorem RetPathBounded.toTerminates {n : ℕ} {r : ρ} {b : ITree α ε ρ} :
     RetPathBounded n r b → Terminates b r := by
-  induction n generalizing b with
-  | zero =>
-    intro h
-    simp only [RetPathBounded] at h
-    exact h ▸ .ret
-  | succ n ih =>
-    intro h
-    simp only [RetPathBounded] at h
-    rcases h with heq | ⟨t, heq, hrec⟩
-    · exact heq ▸ .ret
-    · exact heq ▸ .tau (ih hrec)
+  intro h
+  simpa using
+    (Coinduction.RetPathBounded.toTerminates
+      (T := ITree) (α := α) (ε := ε) (ρ := ρ) (n := n) (r := r) (b := b) h)
 
 /-! ### Conversion between CanDo and VisPathBounded -/
 
@@ -139,11 +94,10 @@ theorem CanDo.toVisPathBounded {b : ITree α ε ρ} {e : ε} {k₂ : α → ITre
     (hcont : ∀ i, R (k₁ i) (k₂ i)) :
     CanDo b e k₂ → ∃ n, VisPathBounded n e R k₁ b := by
   intro hc
-  induction hc with
-  | vis => exact ⟨0, _, rfl, hcont⟩
-  | tau _ ih =>
-    obtain ⟨n, hn⟩ := ih hcont
-    exact ⟨n + 1, .inr ⟨_, rfl, hn⟩⟩
+  simpa using
+    (Coinduction.CanDo.toVisPathBounded
+      (T := ITree) (α := α) (ε := ε) (ρ := ρ)
+      (b := b) (e := e) (k₂ := k₂) (R := R) (k₁ := k₁) hcont hc)
 
 /-- One-step functor for weak bisimulation.
     This has ITree constructors in its indices, which causes issues with
@@ -224,6 +178,31 @@ inductive EquivUTT (x y : ITree α ε ρ) : Prop where
       CanDo b e k₂ → R a b → ∃ (n : ℕ) (k₁ : α → ITree α ε ρ),
         VisPathBounded n e (flip R) k₂ a ∧ ∀ i, R (k₁ i) (k₂ i))
     (h_R : R x y)
+
+/-! ### Inversion lemmas (re-exported from abstract EquivUTT) -/
+
+theorem F_tau_inv {R : ITree α ε ρ → ITree α ε ρ → Prop} {x c : ITree α ε ρ} :
+    EquivUTT.F R (.tau x) c →
+    (∃ y, c = .tau y ∧ R x y) ∨
+    R x c ∨
+    (∃ y, c = .tau y ∧ EquivUTT.F R (.tau x) y) := by
+  simpa using
+    (Coinduction.F_tau_inv (T := ITree) (α := α) (ε := ε) (ρ := ρ) (R := R) (x := x) (c := c))
+
+theorem F_ret_inv {R : ITree α ε ρ → ITree α ε ρ → Prop} {r : ρ} {c : ITree α ε ρ} :
+    EquivUTT.F R (.ret r) c →
+    c = .ret r ∨ (∃ y, c = .tau y ∧ EquivUTT.F R (.ret r) y) := by
+  simpa using
+    (Coinduction.F_ret_inv (T := ITree) (α := α) (ε := ε) (ρ := ρ) (R := R) (r := r) (c := c))
+
+theorem F_vis_inv {R : ITree α ε ρ → ITree α ε ρ → Prop}
+    {e : ε} {k : α → ITree α ε ρ} {c : ITree α ε ρ} :
+    EquivUTT.F R (.vis e k) c →
+    (∃ k', c = .vis e k' ∧ ∀ i, R (k i) (k' i)) ∨
+    (∃ y, c = .tau y ∧ EquivUTT.F R (.vis e k) y) := by
+  simpa using
+    (Coinduction.F_vis_inv (T := ITree) (α := α) (ε := ε) (ρ := ρ)
+      (R := R) (e := e) (k := k) (c := c))
 
 namespace EquivUTT
 
