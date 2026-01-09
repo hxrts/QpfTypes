@@ -5,12 +5,12 @@ This library implements a `codata` command, which can be used to define *coinduc
 using a syntax similar to `inductive`. For example, the following specifies a type of (potentially)
 infinite lists.
 
-```lean4
+```lean
 /-- Infinite lists -/
-codata Stream α 
-  | cons : α → CoList α → CoList α
+codata Stream α
+  | cons : α → Stream α → Stream α
 ```
-```lean4
+```lean
 /-- Potentially infinite Lists -/
 codata CoList α
   | nil : CoList α
@@ -19,7 +19,7 @@ codata CoList α
 
 The framework is *compositional*, so we can use `CoList` in subsequent specifications.
 
-```lean4
+```lean
 /-- Potentially infinite trees -/
 codata CoTree α 
   | node : α → CoList (CoTree α) → CoTree α 
@@ -29,7 +29,7 @@ We can even mix induction and coinduction. However, the framework used by `codat
 nice with `inductive`. So, the library also provides a `data` command for inductive types, using
 that same framework.
 
-```lean4
+```lean
 /-- Infinitely branching, finite depth trees
     That is, one node may have infinitely many children, 
     but the depth of the tree is limited.
@@ -37,7 +37,6 @@ that same framework.
 data CoTree α 
   | node : α → CoList (CoTree α) → CoTree α 
 ```
-
 
 # Live and Dead variables
 
@@ -48,7 +47,7 @@ Conversely, binders that do specify a type, even if that type is `Type _` are *d
 
 This distinction becomes important for subsequent definition: it is only allowed to nest (co)induction behind live parameters. It is thus best to leave out type ascription where possible. That said, live variables have a few more restrictions in where they may appear.
 
-```lean4
+```lean
 codata CoList' (α : Type _) -- In this definition, `α` is a dead parameter
   | nil : CoList' α 
   | cons : α → CoList' α → CoList' α
@@ -64,22 +63,18 @@ codata CoTree (α : Type _)
 
 Reusing the type ascription to distinguish live/dead variable is not ideal; in future we'll either introduce dedicated syntax, or automatically determine which variables can be live and which have to be dead.
 
-
-
 # Limitations
 
 The implementation is intended as a proof-of-concept. It is still very rough, and not at all ready for serious use.
 
-Fundamentally, (co)recursive families of types or even mutually (co)inductive types are not supported yet, and the only way to define (total) (co)recursive functions is through the low-level `MvQPF.Fix.drec` and `MvQPF.Cofix.corec` (co)recursion principles.
+Current limitations:
+- **Indexed type families** are not supported (e.g., `data Vec α : Nat → Type`)
+- **Mutually (co)inductive types** are not supported yet
+- **Dependent arrows** in constructors are not supported (e.g., `vis {α} (e : ε α) (k : α → T)`)
+
+The `data` macro generates standard recursion principles (`rec`, `drec`, `recOn`, `casesOn`, `ind`), and `codata` generates `corec`. These should suffice for most use cases, though complex recursion patterns may still require the lower-level `MvQPF.Fix.drec` and `MvQPF.Cofix.corec`.
 
 Beyond this, the implementation is far from perfect and might throw errors for specifications that should be supported. Feel free to open issues for any such specifications.
-
-
-# Try it Out
-
-You can clone https://github.com/alexkeizer/qpf4-example for an example project that imports this package. There is also https://gitpod.io/#https://github.com/alexkeizer/qpf4-example, allowing you to play with codatatypes directly in your browser, no setup needed.
-
-
 
 # Organization
 
@@ -103,15 +98,10 @@ Proof engineering note:
 - For transitivity or substitution-style proofs, use paco/gpaco to avoid
   nested case analysis on fixed-point unfoldings.
 
-
-
-
-
 # References
 
 For a thorough discussion about the foundations and implementation of this library, see the accompanying MSc. Thesis by Alex C. Keizer: [Implementing a definitional (co)datatype package in Lean 4, based
 on quotients of polynomial functors](https://eprints.illc.uva.nl/id/eprint/2239/1/MoL-2023-03.text.pdf)
-
 
 The foundations of this library come from [avigad/qpf](https://github.com/avigad/qpf).
 There it was described as
