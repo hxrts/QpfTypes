@@ -27,11 +27,11 @@ ITree constructors in their indices, making them amenable to case analysis.
 
 ## Comparison with EquivUTT
 
-| Aspect       | Bisim                 | EquivUTT                   |
-|--------------|-----------------------|----------------------------|
-| Index types  | `ρ`, `ε`, `α → ITree` | ITree constructors         |
-| Transitivity | Complete proof        | 8 sorries (QPF limitation) |
-| Style        | Behavioral/membership | Structural/F-functor       |
+| Aspect       | Bisim                 | EquivUTT                           |
+|--------------|-----------------------|------------------------------------|
+| Index types  | `ρ`, `ε`, `α → ITree` | ITree constructors                 |
+| Transitivity | Complete proof        | Incomplete in concrete EquivUTT    |
+| Style        | Behavioral/membership | Structural/F-functor               |
 
 For practical use, prefer `Bisim` as it has complete proofs.
 -/

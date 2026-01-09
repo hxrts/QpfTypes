@@ -18,9 +18,10 @@ chains are finite, which makes EquivUTT equivalent to the membership-based Bisim
 
 ## Limitation
 
-Due to QPF quotient encoding limitations, the transitivity proof is incomplete.
-See `EquivUTT.trans` for details. For a complete equivalence relation, use
-`ITree.Bisim` from `Qpf.ITree.Bisim` instead.
+The concrete transitivity proof in this file is still incomplete due to QPF
+quotient elimination limitations. For a complete equivalence relation, use
+`ITree.Bisim` from `Qpf.ITree.Bisim` or the abstract EquivUTT instance in
+`Qpf.ITree.EquivUTT_Abstract`.
 -/
 
 namespace ITree

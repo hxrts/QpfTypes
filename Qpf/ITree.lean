@@ -22,7 +22,8 @@ Interaction trees are a way to represent computations that may:
 
 - `Qpf.ITree.Basic`: Core ITree definition, constructors, and structural lemmas
 - `Qpf.ITree.Bisim`: Membership-based weak bisimulation (complete proofs)
-- `Qpf.ITree.EquivUTT`: F-based weak bisimulation (has incomplete transitivity)
+- `Qpf.ITree.EquivUTT`: F-based weak bisimulation (concrete, transitivity incomplete)
+- `Qpf.ITree.EquivUTT_Abstract`: Abstract EquivUTT instance (transitivity complete)
 - `Qpf.ITree.Equiv`: Equivalence proof between Bisim and EquivUTT
 
 ## Main Definitions
@@ -36,8 +37,8 @@ Interaction trees are a way to represent computations that may:
 
 For proving properties about ITrees, prefer `Bisim` over `EquivUTT`:
 - `Bisim` has complete proofs for reflexivity, symmetry, and transitivity
-- `EquivUTT.trans` has sorries due to QPF quotient elimination limitations
-- Use `EquivUTT.trans'` for sorry-free transitivity via the Bisim detour
+- Concrete `EquivUTT.trans` in `Qpf.ITree.EquivUTT` is still incomplete
+- Use `EquivUTT.trans'` (Bisim detour) or the abstract instance in `Qpf.ITree.EquivUTT_Abstract`
 
 ## References
 

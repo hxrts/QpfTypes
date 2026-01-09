@@ -286,7 +286,7 @@ private theorem find_ret_bound_aux
 This uses strong induction on an explicit bound. In the taur case, the bound
 decreases because b = .tau b'. In tau/taul cases, ih applies directly.
 
-This helper is used to eliminate the nested taur sorries in EquivUTT.toBisim. -/
+This helper is used to eliminate the nested taur cases in EquivUTT.toBisim. -/
 private theorem terminates_from_tau_with_bound
     {R : ITree α ε ρ → ITree α ε ρ → Prop}
     (isFixpoint : ∀ a b, R a b → EquivUTT.F R a b)
@@ -536,11 +536,11 @@ theorem Bisim.iff_EquivUTT {t₁ t₂ : ITree α ε ρ} : Bisim t₁ t₂ ↔ Eq
 
 /-- Transitivity for EquivUTT via the Bisim detour.
 
-This provides a sorry-free transitivity proof by routing through the
+This provides a transitivity proof by routing through the
 membership-based `Bisim` formulation, which has a direct transitivity proof.
 The equivalence `Bisim ↔ EquivUTT` lets us convert back and forth.
 
-Use this instead of `EquivUTT.trans` which has sorries due to QPF limitations. -/
+Use this if you stay in the concrete `Qpf.ITree.EquivUTT` development. -/
 theorem EquivUTT.trans' {x y z : ITree α ε ρ} :
     EquivUTT x y → EquivUTT y z → EquivUTT x z :=
   fun h1 h2 => Bisim.toEquivUTT (Bisim.trans (EquivUTT.toBisim h1) (EquivUTT.toBisim h2))
