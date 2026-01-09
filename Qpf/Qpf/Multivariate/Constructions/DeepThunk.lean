@@ -1,7 +1,9 @@
 import Mathlib.Data.QPF.Multivariate.Constructions.Comp
+import Mathlib.Data.QPF.Multivariate.Constructions.Const
 import Mathlib.Data.QPF.Multivariate.Constructions.Prj
 import Mathlib.Data.QPF.Multivariate.Constructions.Cofix
 import Qpf.Macro.Comp
+import Qpf.PFunctor.Multivariate.Constructions.Prod
 
 namespace MvQPF
 
@@ -65,6 +67,60 @@ open DTSum in
 instance : MvQPF DTSum.Uncurried :=
   .ofEquiv (fun _ => equiv)
 
+inductive DTSumMod (Mod : Type u) (α β : Type u) : Type u
+  /-- Hand responsibility back to the co-recursor -/
+  | recall (v : α) (mod : Mod)
+  /-- Continue constructing a DeepThunk -/
+  | cont   (v : β) (mod : Mod)
+
+namespace DTSumMod
+
+abbrev Uncurried (Mod : Type u) := @TypeFun.ofCurried 2 (DTSumMod Mod)
+
+def equivProd {Mod : Type u} {α β : Type u} : DTSumMod Mod α β ≃ (DTSum α β × Mod) where
+  toFun
+    | .recall a mod => (.recall a, mod)
+    | .cont   a mod => (.cont a, mod)
+  invFun
+    | (.recall a, mod) => .recall a mod
+    | (.cont   a, mod) => .cont a mod
+  left_inv  := by rintro (_|_) <;> rfl
+  right_inv := by
+    rintro ⟨(_|_), _⟩ <;> rfl
+
+def equiv {Mod} {Γ} :
+    Uncurried Mod Γ ≃ (Comp Prod.Prod' !![Const 2 Mod, DTSum.Uncurried]) Γ := by
+  refine
+    { toFun := ?to
+      invFun := ?inv
+      left_inv := ?li
+      right_inv := ?ri }
+  · intro x
+    cases x with
+    | recall a mod => exact (.recall a, mod)
+    | cont a mod => exact (.cont a, mod)
+  · intro x
+    cases x with
+    | _ a mod =>
+      cases a with
+      | recall v => exact .recall v mod
+      | cont v => exact .cont v mod
+  · intro x
+    cases x <;> rfl
+  · intro x
+    cases x with
+    | _ a mod => cases a <;> rfl
+
+end DTSumMod
+
+open DTSumMod in
+instance {Mod : Type u} : MvFunctor (DTSumMod.Uncurried Mod) where
+  map f := equiv.invFun ∘ MvFunctor.map f ∘ equiv.toFun
+
+open DTSumMod in
+instance {Mod : Type u} : MvQPF (DTSumMod.Uncurried Mod) :=
+  .ofEquiv (fun _ => equiv)
+
 namespace DeepThunk
 
 /--
@@ -90,6 +146,22 @@ instance : MvQPF (!![Prj 1, @Prj (n + 2) 0] j) := by
 
 instance {i : Fin2 n} : MvFunctor (innerMapper i) := by cases i <;> infer_instance
 instance {i : Fin2 n} : MvQPF (innerMapper i)     := by cases i <;> infer_instance
+
+abbrev innerMapperMod (Mod : Type u) : Vec (TypeFun (n.succ)) n
+  | .fz => Comp (DTSumMod.Uncurried Mod) !![Prj 1, Prj 0]
+  | .fs n => Prj (n.add 2)
+
+abbrev hoFunctorMod (F : TypeFun n) (Mod : Type u) : TypeFun (n + 1) :=
+  Comp F (innerMapperMod (n := n) Mod)
+
+instance {Mod : Type u} {i : Fin2 n} : MvFunctor (innerMapperMod (n := n) Mod i) := by
+  cases i <;> infer_instance
+
+instance {Mod : Type u} {i : Fin2 n} : MvQPF (innerMapperMod (n := n) Mod i) := by
+  cases i <;> infer_instance
+
+abbrev UncurriedMod (F : TypeFun n) (Mod : Type u) [MvFunctor F] [MvQPF F] :=
+  Cofix (hoFunctorMod F Mod)
 
 abbrev Uncurried (F : TypeFun n) [MvFunctor F] [MvQPF F] := Cofix (hoFunctor F)
 
@@ -149,6 +221,81 @@ def corec
 
     exact MvFunctor.map this v
   ) ∘ f
+
+def corecMod
+    {F : TypeFun n.succ} {α : TypeVec n} {Mod : Type u}
+    [inst : MvFunctor F] [MvQPF F]
+    (apply : Mod → UncurriedMod F Mod (α ::: β) → UncurriedMod F Mod (α ::: β))
+    (f : β → UncurriedMod F Mod (α ::: β))
+    : β → Cofix F α
+  := (Cofix.corec fun v => by
+    have v := Cofix.dest v
+
+    have : hoFunctorMod F Mod (α.append1 β ::: Cofix (hoFunctorMod F Mod) (α ::: β)) =
+        F (α ::: (DTSumMod Mod β (Cofix (hoFunctorMod F Mod) (α.append1 β)))) := by
+      simp only [hoFunctorMod, Comp]
+      congr
+      funext i
+      simp only [innerMapperMod, TypeVec.append1]
+      cases i <;> rfl
+    rw [this] at v
+
+    have : TypeVec.Arrow (α ::: (DTSumMod Mod β (Cofix (hoFunctorMod F Mod) (α ::: β))))
+        (α ::: Cofix (hoFunctorMod F Mod) (α ::: β)) := fun
+      | .fz => fun
+        | .recall x m => apply m (f x)
+        | .cont x m => apply m x
+      | .fs _ => id
+
+    exact MvFunctor.map this v
+  ) ∘ f
+
+/-! ### Common instantiations -/
+
+/-- Recover the original behavior: modifiers are ignored. -/
+def corecMod_id
+    {F : TypeFun n.succ} {α : TypeVec n}
+    [inst : MvFunctor F] [MvQPF F]
+    (f : β → UncurriedMod F PUnit (α ::: β))
+    : β → Cofix F α :=
+  corecMod (Mod := PUnit) (apply := fun _ x => x) f
+
+/-- Provide a custom action for modifiers. -/
+def corecMod_with
+    {F : TypeFun n.succ} {α : TypeVec n} {Mod : Type u}
+    [inst : MvFunctor F] [MvQPF F]
+    (apply : Mod → UncurriedMod F Mod (α ::: β) → UncurriedMod F Mod (α ::: β))
+    (f : β → UncurriedMod F Mod (α ::: β))
+    : β → Cofix F α :=
+  corecMod (Mod := Mod) apply f
+
+/-- Compose a list of modifiers using a user-supplied interpreter. -/
+def corecMod_list
+    {F : TypeFun n.succ} {α : TypeVec n} {ι : Type u}
+    [inst : MvFunctor F] [MvQPF F]
+    (interpret : ι → UncurriedMod F (List ι) (α ::: β) →
+      UncurriedMod F (List ι) (α ::: β))
+    (f : β → UncurriedMod F (List ι) (α ::: β))
+    : β → Cofix F α :=
+  corecMod (Mod := List ι)
+    (apply := fun mods x => mods.foldl (fun acc m => interpret m acc) x)
+    f
+
+/-- Endomorphism-style modifiers, using function application. -/
+def corecMod_endo
+    {F : TypeFun n.succ} {α : TypeVec n} {Mod : Type u}
+    [inst : MvFunctor F] [MvQPF F]
+    [CoeeFun Mod (fun _ => UncurriedMod F Mod (α ::: β) → UncurriedMod F Mod (α ::: β))]
+    (f : β → UncurriedMod F Mod (α ::: β))
+    : β → Cofix F α :=
+  corecMod (Mod := Mod) (apply := fun m x => m x) f
+
+example
+    {F : TypeFun n.succ} {α : TypeVec n} {Mod : Type u}
+    [inst : MvFunctor F] [MvQPF F]
+    [CoeeFun Mod (fun _ => UncurriedMod F Mod (α ::: β) → UncurriedMod F Mod (α ::: β))] :
+    (β → UncurriedMod F Mod (α ::: β)) → β → Cofix F α :=
+  corecMod_endo
 
 end DeepThunk
 /--

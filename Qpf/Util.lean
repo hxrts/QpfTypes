@@ -1,4 +1,18 @@
 import Qpf.Util.Vec
--- import Qpf.Util.TypeVec
 import Qpf.Util.TypeFun
--- import Qpf.Util.MvQPF.Patterns  -- moved out to break cycle: Util → Patterns → ofPolynomial → Util
+
+/-!
+# QPF Utilities
+
+This module provides utility definitions used throughout the QPF library.
+
+## Module Structure
+
+- `Qpf.Util.Vec`: Fixed-length vectors and related operations
+- `Qpf.Util.TypeFun`: Type function utilities (`TypeFun`, `CurriedTypeFun`, currying/uncurrying)
+
+## Usage
+
+These utilities are primarily for internal use by the QPF macros. Most users will not need
+to import this module directly.
+-/

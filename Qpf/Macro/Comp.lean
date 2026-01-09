@@ -22,7 +22,7 @@ import Mathlib.Data.QPF.Multivariate.Constructions.Const
 import Mathlib.Data.QPF.Multivariate.Constructions.Prj
 import Mathlib.Data.Vector.Basic
 
-import Qpf.Qpf
+import Qpf.Core
 import Qpf.Qpf.Multivariate.Basic
 import Qpf.Macro.Common
 

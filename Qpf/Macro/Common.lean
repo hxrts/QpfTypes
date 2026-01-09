@@ -1,4 +1,4 @@
-import Qpf.Qpf
+import Qpf.Core
 
 namespace Macro
   open Lean Meta Elab Term
