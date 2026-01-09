@@ -1,4 +1,6 @@
 import Qpf.ITree.Basic
+import Qpf.ITree.ProtocolInstance
+import Qpf.ITree.EquivUTT_Abstract
 import Qpf.ITree.Bisim
 import Qpf.ITree.EquivUTT
 import Qpf.ITree.Equiv
