@@ -7,3 +7,5 @@ data Simple α where
 
 #check Simple.recOn
 #check Simple.casesOn
+#check Simple.rec
+#check Simple.drec

@@ -5,11 +5,13 @@ This file generates recursors (elimination principles) for `data` types.
 The generated recursors include:
 
 - `ind`: Induction principle for `Prop`-valued motives (marked with `@[induction_eliminator]`)
-- `rec`: Recursor for `Type`-valued motives
+- `rec`: Recursor for non-dependent `Type`-valued motives
+- `drec`: Dependent recursor for `Type`-valued motives
 - `cases`: Case analysis for `Prop` (marked with `@[cases_eliminator]`)
 - `casesType`: Case analysis for `Type`
 
-These recursors wrap the underlying `MvQPF.Fix.ind` and `MvQPF.Fix.drec` functions,
+These recursors wrap the underlying `MvQPF.Fix.ind`, `MvQPF.Fix.rec`, and
+`MvQPF.Fix.drec` functions,
 providing a more natural interface that matches the shape constructors.
 -/
 
@@ -66,6 +68,22 @@ def mkRecursorBinder
   let ty ← form.foldlM (fun acc => (match · with
     | ⟨.nonRec x, name⟩ => `(($name : $x) → $acc)
     | ⟨.directRec, name⟩ => `(($name : $rec_type) → $acc)
+    | ⟨.composed x, _⟩ => throwErrorAt x "Cannot handle recursive forms"
+  )) out
+
+  `(bb | ($(mkIdent $ flattenForArg name) : $ty))
+
+/-- Generate binders for a non-dependent recursor (`Fix.rec`). -/
+def mkRecursorBinderConst
+    (motive : Term) (name : Name)
+    (form : List RecursionForm) : m (TSyntax ``bracketedBinder) := do
+  let form ← form.mapM fun x => (x, mkIdent ·) <$> mkFreshBinderName
+  let form := form.reverse
+
+  let out := motive
+  let ty ← form.foldlM (fun acc => (match · with
+    | ⟨.nonRec x, name⟩ => `(($name : $x) → $acc)
+    | ⟨.directRec, name⟩ => `(($name : $motive) → $acc)
     | ⟨.composed x, _⟩ => throwErrorAt x "Cannot handle recursive forms"
   )) out
 
@@ -153,28 +171,50 @@ def generateRecBody (ctors : Array (Name × List RecursionForm)) (includeMotive 
     let names ← listToEqLenNames form
     let names := names.zip form.toArray
 
-    let desArgs ← names.mapM fun ⟨nm, f⟩ =>
+    let recArgs ← names.mapM fun ⟨nm, f⟩ => do
       match f with
-      | .directRec => `(⟨_, $nm⟩)
-      | .nonRec _  => `(_)
-      | .composed _ => throwError "Cannot handle composed"
+      | .directRec =>
+          if includeMotive then
+            let ih ← mkFreshBinderName
+            let ihId := mkIdent ih
+            let pat ← `(⟨$nm, $ihId⟩)
+            pure (nm, some ihId, pat)
+          else
+            let pat ← `(⟨$nm, _⟩)
+            pure (nm, none, pat)
+      | .nonRec _ =>
+          let pat ← `($nm)
+          pure (nm, none, pat)
+      | .composed _ =>
+          throwError "Cannot handle composed"
 
-    let nonMotiveArgs ← names.mapM fun _ => `(_)
-    let motiveArgs    ← if includeMotive then
-        names.filterMapM fun ⟨nm, f⟩ =>
-        match f with
-        | .directRec => some <$> `($nm)
-        | .nonRec _  => pure none
-        | .composed _ => throwError "Cannot handle composed"
-      else pure #[]
-
+    let desArgs : Array (TSyntax `term) := recArgs.map (fun x => x.2.2)
+    let callArgs : Array Term := recArgs.map (fun x => x.1)
+    let motiveArgs : Array Term := if includeMotive then
+        recArgs.filterMap fun x =>
+          match x.2.1 with
+          | some ih => some ih
+          | none => none
+      else #[] 
 
     `(matchAltExpr|
       | $outerCaseId $desArgs* =>
-        $callName $nonMotiveArgs* $motiveArgs*
+        $callName $callArgs* $motiveArgs*
     )
 
   `(matchAltExprs| $deeper:matchAlt*)
+
+/-- Generate match alternatives for the non-dependent recursor (`Fix.rec`). -/
+def generateRecBodyConst (ctors : Array (Name × List RecursionForm)) : m (TSyntax ``matchAlts) := do
+  let deeper: (TSyntaxArray ``matchAlt) ← ctors.mapM fun ⟨outerCase, form⟩ => do
+    let callName := mkIdent $ flattenForArg outerCase
+    let outerCaseId := mkIdent $ `Shape ++ outerCase
+    let names ← listToEqLenNames form
+    `(matchAltExpr|
+      | $outerCaseId $names* =>
+        $callName $names*
+    )
+  `(matchAltExprs| $deeper:matchAlt* )
 
 /-! ## Main Recursor Generation -/
 
@@ -183,7 +223,8 @@ def generateRecBody (ctors : Array (Name × List RecursionForm)) (includeMotive 
 
   This generates four elimination principles:
   - `ind`: Induction for `Prop` (with `@[induction_eliminator]`)
-  - `rec`: Recursion for `Type _`
+  - `rec`: Recursion for non-dependent `Type _`
+  - `drec`: Dependent recursion for `Type _`
   - `cases`: Case analysis for `Prop` (with `@[cases_eliminator]`)
   - `casesType`: Case analysis for `Type`
 -/
@@ -203,8 +244,12 @@ def genRecursors (view : DataView) : CommandElabM Unit :=
   let mapped := view.ctors.map (RecursionForm.extractWithName view.declName · rec_type)
   let caseNames := mapped.map fun ⟨name, _⟩ => mkIdent (flattenForArg name)
 
+  let motiveTerm ← `(motive)
+  let ih_types_const ← mapped.mapM fun ⟨name, base⟩ =>
+    mkRecursorBinderConst motiveTerm name base
+
   let ih_types ← mapped.mapM fun ⟨name, base⟩ =>
-    mkRecursorBinder (rec_type) (name) base true
+    mkRecursorBinder (rec_type) name base true
 
   elabCommandAndTrace (header := "elaborating induction principle …") <|← `(
     @[elab_as_elim, induction_eliminator]
@@ -220,10 +265,19 @@ def genRecursors (view : DataView) : CommandElabM Unit :=
   elabCommandAndTrace (header := "elaborating recursor …") <|← `(
     @[elab_as_elim]
     def $(view.shortDeclName ++ `rec |> mkIdent):ident
+      { motive : Type _ }
+      $ih_types_const*
+      : (val : $rec_type) → motive
+    := $(mkIdent ``_root_.MvQPF.Fix.rec)
+        (match · with $(← generateRecBodyConst mapped)))
+
+  elabCommandAndTrace (header := "elaborating dependent recursor …") <|← `(
+    @[elab_as_elim]
+    def $(view.shortDeclName ++ `drec |> mkIdent):ident
       { motive : $rec_type → $motiveSort}
       $ih_types*
       : (val : $rec_type) → motive val
-    := $(mkIdent ``MvQPF.Fix.drec)
+    := $(mkIdent ``_root_.MvQPF.Fix.drec)
         (match · with $(← generateRecBody mapped true)))
 
   elabCommandAndTrace (header := "elaborating recOn …") <|← `(
@@ -233,7 +287,7 @@ def genRecursors (view : DataView) : CommandElabM Unit :=
       { motive : $rec_type → $motiveSort}
       $ih_types*
       : motive val
-    := $(mkIdent (view.shortDeclName ++ `rec)) (motive := motive) $caseNames:ident* val
+    := $(mkIdent (view.shortDeclName ++ `drec)) (motive := motive) $caseNames:ident* val
   )
 
   let casesOnTypes ← mapped.mapM fun ⟨name, base⟩ =>
