@@ -161,7 +161,7 @@ private def ctorLiveArgNames (args : CtorArgs) : Array Name :=
   That is, it defines a type with exactly as many constructor as the input type, but such that
   all constructors only keep the *dead* arguments (arguments not in functor positions).
 -/
-def mkHeadT (view : InductiveView) (ctorArgs : Array CtorArgs) : CommandElabM Name := do
+def mkHeadT (view : InductiveView) (ctorArgs : Array CtorArgs) (explicitUniverse? : Option Level) : CommandElabM Name := do
   let (declName, declId, shortDeclName) ← addSuffixToDeclId view.declId "HeadT"
   withQPFTraceNode m!"defining `{declName}`" (tag := "mkHeadT") <| do
   -- If the original declId was `MyType`, we want to register the head type under `MyType.HeadT`
@@ -213,7 +213,7 @@ def mkHeadT (view : InductiveView) (ctorArgs : Array CtorArgs) : CommandElabM Na
   -- We keep those dead parameters for HeadT
 
   -- Universe polymorphic HeadT: preserve levelNames from the original view
-  let resultLevel := computeResultUniverse view.levelNames view.explicitUniverse?
+  let resultLevel := computeResultUniverse view.levelNames explicitUniverse?
   let headTType ← runTermElabM fun _ => do
     delab (mkSort (Level.succ resultLevel))
 
@@ -238,12 +238,12 @@ open Parser Parser.Term Parser.Command in
   argument
 -/
 def mkChildT (view : InductiveView) (r : Replace) (headTName : Name) (ctorArgs : Array CtorArgs)
-    : CommandElabM Name := do
+    (explicitUniverse? : Option Level) : CommandElabM Name := do
   -- If the original declId was `MyType`, we want to register the child type under `MyType.ChildT`
   let (declName, declId, _shortDeclName) ← addSuffixToDeclId view.declId "ChildT"
   withQPFTraceNode m!"defining `{declName}`" (tag := "mkChildT") <| do
 
-  let resultLevel := computeResultUniverse view.levelNames view.explicitUniverse?
+  let resultLevel := computeResultUniverse view.levelNames explicitUniverse?
   let target_type ←
     runTermElabM fun _ => do
       let tv := mkApp (mkConst ``TypeVec [resultLevel]) (mkNatLit r.arity)
@@ -556,8 +556,8 @@ def mkShape (view : DataView) : TermElabM MkShapeResult := do
         levelNames := view.liveLevelNames
     }
 
-    let headTName ← mkHeadT viewDeadOnly ctorArgs
-    let childTName ← mkChildT viewDeadOnly r headTName ctorArgs
+    let headTName ← mkHeadT viewDeadOnly ctorArgs view.explicitUniverse?
+    let childTName ← mkChildT viewDeadOnly r headTName ctorArgs view.explicitUniverse?
 
     let headTId := mkIdent headTName
     let childTId := mkIdent childTName

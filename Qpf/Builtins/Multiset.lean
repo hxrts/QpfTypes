@@ -62,7 +62,7 @@ abbrev perm {Γ} (x y : QpfList' Γ) : Prop :=
   List.Perm (unbox x) (unbox y)
 
 /-- Permutation on the curried list representation. -/
-abbrev permCurried {Γ} : List' Γ → List' Γ → Prop := List.Perm
+abbrev permCurried ⦃Γ⦄ : List' Γ → List' Γ → Prop := List.Perm
 
 theorem perm_equivalence (Γ : TypeVec 1) : Equivalence (@perm Γ) :=
   ⟨

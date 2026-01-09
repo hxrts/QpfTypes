@@ -20,7 +20,7 @@ import Mathlib.Data.QPF.Multivariate.Constructions.Fix
 import Mathlib.Tactic.ExtractGoal
 
 open Lean.Parser (Parser)
-open Lean Meta Elab.Command Elab.Term Parser.Term
+open Lean Meta Elab.Command Elab.Term Parser.Term PrettyPrinter
 open Lean.Parser.Tactic (inductionAlt)
 
 open Macro (withQPFTraceNode elabCommandAndTrace)
