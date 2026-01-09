@@ -844,42 +844,4 @@ theorem EquivUTT.trans
   intro h1 h2
   exact Bisim.toEquivUTT (Bisim.trans (EquivUTT.toBisim h1) (EquivUTT.toBisim h2))
 
-/-!
-### Transitivity Subproblems (PACO-focused)
-
-These lemmas correspond to the stuck cases in the transitivity proof and are
-intended to be solved using PACO/companion techniques.
--/
-
-/-
-The following transitivity and inversion lemmas are disabled due to dependent
-elimination issues with Lean 4.27.0-rc1. They contain `sorry` placeholders anyway
-and should be reimplemented using paco/companion techniques.
-
-TODO: Re-enable these proofs when the dependent elimination issues are resolved.
--/
-
-/-
-/-- tau-tau case for transitivity. -/
-theorem trans_tau_case ...
-
-/-- taur case for transitivity. -/
-theorem trans_taur_case ...
-
-/-- ret case for transitivity. -/
-theorem trans_ret_case ...
-
-/-- vis case for transitivity. -/
-theorem trans_vis_case ...
-
-/-- Inversion lemma for `F` with `tau` on the left. -/
-theorem F_tau_inv ...
-
-/-- Inversion lemma for `F` with `ret` on the left. -/
-theorem F_ret_inv ...
-
-/-- Inversion lemma for `F` with `vis` on the left. -/
-theorem F_vis_inv ...
--/
-
 end Coinduction
