@@ -191,6 +191,13 @@ def genRecursors (view : DataView) : CommandElabM Unit :=
   withQPFTraceNode "attempting to generate recursors for datatype"
     (tag := "genRecursors") <| do
 
+  let motiveSort : Term ←
+    match view.explicitUniverse? with
+    | some u =>
+        runTermElabM fun _ => do
+          delab (mkSort u)
+    | none => `(Type _)
+
   let rec_type := view.getExpectedType
 
   let mapped := view.ctors.map (RecursionForm.extractWithName view.declName · rec_type)
@@ -213,7 +220,7 @@ def genRecursors (view : DataView) : CommandElabM Unit :=
   elabCommandAndTrace (header := "elaborating recursor …") <|← `(
     @[elab_as_elim]
     def $(view.shortDeclName ++ `rec |> mkIdent):ident
-      { motive : $rec_type → Type _}
+      { motive : $rec_type → $motiveSort}
       $ih_types*
       : (val : $rec_type) → motive val
     := $(mkIdent ``MvQPF.Fix.drec)
@@ -223,7 +230,7 @@ def genRecursors (view : DataView) : CommandElabM Unit :=
     @[elab_as_elim]
     def $(view.shortDeclName ++ `recOn |> mkIdent):ident
       (val : $rec_type)
-      { motive : $rec_type → Type _}
+      { motive : $rec_type → $motiveSort}
       $ih_types*
       : motive val
     := $(mkIdent (view.shortDeclName ++ `rec)) (motive := motive) $caseNames:ident* val
@@ -245,7 +252,7 @@ def genRecursors (view : DataView) : CommandElabM Unit :=
   elabCommandAndTrace (header := "elaborating casesOn (Type _) eliminator …") <|← `(
     @[elab_as_elim]
     def $(view.shortDeclName ++ `casesType |> mkIdent):ident
-      { motive : $rec_type → Type}
+      { motive : $rec_type → $motiveSort}
       $casesOnTypes*
       : (val : $rec_type) → motive val
     := $(mkIdent ``_root_.MvQPF.Fix.drec)
