@@ -5,7 +5,7 @@ This module defines an abstract interface for coinductive tree-like types with
 three constructors (`ret`, `tau`, `vis`) and the usual injectivity/distinctness
 properties. It is designed as a reusable spec layer that concrete coinductive
 implementations (e.g. QPF/Cofix-based ITrees) can instantiate.
--/-
+-/
 
 /-- Binary relations on a type. -/
 def Rel (α : Type) := α → α → Prop

@@ -398,12 +398,13 @@ def dataSyntaxToView (modifiers : Modifiers) (decl : Syntax) : CommandElabM Data
     { name, binder, universeNames }
 
 
-  let view := {
+  let view : DataView := {
     ref             := decl
     shortDeclName   := name
     derivingClasses := classes
     declId, modifiers, declName, levelNames
     binders, type?, ctors,
+    explicitUniverse? := none
     command, liveBinders, deadBinders, deadBinderNames, deadBinderInfos
   }
   withQPFTraceNode "elaborated view …" <| do
