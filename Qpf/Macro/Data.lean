@@ -13,7 +13,8 @@ import Qpf.Macro.Comp
 
 open Lean Meta Elab.Command
 open Elab (Modifiers elabModifiers)
-open Parser.Term (namedArgument)
+open Parser.Term (namedArgument matchAltExpr)
+open Parser.Tactic
 open PrettyPrinter (delab)
 
 open Macro (withQPFTraceNode elabCommandAndTrace)
@@ -93,6 +94,7 @@ section
     := leading_parser cmd >> declId  >> optDeclSig
                         >> Parser.optional  (symbol " :=" <|> " where")
                         >> many ctor
+                        >> optional (ppDedent ppLine >> computedFields)
                         >> optDeriving
 
   def data := inductive_like "data "
@@ -672,6 +674,124 @@ def mkType (view : DataView) (base : Term × Term) : CommandElabM Unit :=
         TypeFun.curried $uncurriedApplied
   )
 
+def mkComputedFields (view : DataView) : CommandElabM Unit :=
+  withQPFTraceNode m!"defining computed fields for {view.declId}" (tag := "mkComputedFields") <| do
+  if view.computedFields.isEmpty then
+    return
+  if view.command == .Codata then
+    throwErrorAt view.ref "Computed fields are not supported for `codata` yet"
+
+  let liveBinders := view.liveBinders.raw.map fun stx =>
+    if stx.getKind == ``Parser.Term.binderIdent then
+      stx[0]
+    else
+      stx
+  let bindersRaw := view.deadBinders.raw ++ liveBinders
+  let binders : TSyntaxArray [`ident, `Lean.Parser.Term.hole, `Lean.Parser.Term.bracketedBinder] :=
+    ⟨bindersRaw.toList.map TSyntax.mk⟩
+  let recType := view.getExpectedType
+  let recId := mkIdent (view.shortDeclName ++ `rec)
+
+  let rec stripParens : Syntax → Syntax
+    | Syntax.node _ ``Lean.Parser.Term.paren #[_, inner, _] => stripParens inner
+    | stx => stx
+
+  let rec collectAppArgs : Syntax → Array Syntax
+    | Syntax.node _ ``Lean.Parser.Term.app args =>
+        if h : 0 < args.size then
+          let fn := args[0]
+          let rest :=
+            if h1 : 1 < args.size then
+              if args.size == 2 && args[1].getKind == nullKind then
+                args[1].getArgs
+              else
+                args.extract 1 args.size
+            else
+              #[]
+          collectAppArgs fn ++ rest
+        else
+          #[]
+    | stx => #[]
+
+  let mkCaseFun (ctor : CtorView) (alt : Syntax) (field : QpfComputedFieldView) : CommandElabM Term := do
+    let (pat, rhs) ←
+      match alt with
+      | `(matchAltExpr| | $pat:term => $rhs:term) => pure (pat, rhs)
+      | _ => throwErrorAt alt "Unsupported computed field clause; expected `| <ctor> ... => ...`"
+    -- Keep parsing strict; errors mention the exact clause that failed.
+    let pat := stripParens pat
+    let args := collectAppArgs pat
+    let forms := RecursionForm.extract ctor recType |>.toArray
+    if args.size != forms.size then
+      throwErrorAt pat
+        "Constructor pattern has {args.size} arguments, but expected {forms.size}"
+    let mut argNames : Array Ident := #[]
+    for arg in args do
+      if arg.getKind == identKind then
+        argNames := argNames.push ⟨arg⟩
+      else if arg.getKind == ``Lean.Parser.Term.hole then
+        argNames := argNames.push (mkIdentFrom arg (← Elab.Term.mkFreshBinderName))
+      else
+        throwErrorAt arg "Computed field patterns must use identifiers or `_`"
+
+    let mut lam := rhs
+    let pairs := (Array.zip argNames forms).toList.reverse
+    for ⟨name, form⟩ in pairs do
+      let argTy : Term := match form with
+        | RecursionForm.nonRec stx | RecursionForm.composed stx => stx
+        | RecursionForm.directRec => field.type
+      lam ← `(fun ($name:ident : $argTy) => $lam)
+    return lam
+
+  for field in view.computedFields do
+    let fieldName := mkIdent (view.declName ++ field.fieldId)
+    let fullType : Term ← `($recType:term → $(field.type):term)
+    let modifiers := { field.modifiers with computeKind := .noncomputable }
+    let alts ←
+      match field.matchAlts with
+      | `(matchAlts| $alts:matchAlt*) => pure alts.raw
+      | _ => throwErrorAt field.ref "Failed to parse computed field clauses"
+    if alts.size != view.ctors.size then
+      throwErrorAt field.ref
+        "Computed field has {alts.size} clauses, but expected {view.ctors.size}"
+    let caseFuns ← (Array.zip view.ctors alts).mapM fun ⟨ctor, alt⟩ =>
+      mkCaseFun ctor alt field
+    elabCommandAndTrace <|← `(
+      $(quote modifiers):declModifiers
+      def $fieldName:ident $binders* : $fullType :=
+        $recId (motive := $(field.type)) $caseFuns:term*
+    )
+    for ctor in view.ctors do
+      let (ctorBinders, ctorBinderNames) ←
+        Macro.mkFreshNamesForBinderHoles ctor.binders.getArgs
+      let ctorId := mkIdent ctor.declName
+      let argTerms : Array Term := ctorBinderNames.map (fun n => (n : Term))
+      let ctorApp : Term ←
+        if argTerms.isEmpty then
+          `($ctorId:ident)
+        else
+          `(@$ctorId:ident $argTerms:term*)
+      let lhs : Term ← `($fieldName:ident $ctorApp:term)
+      let stmt : Term ← `($lhs:term = _)
+      let lemmaBindersRaw := bindersRaw ++ ctorBinders.raw
+      let lemmaBinders : TSyntaxArray [`ident, `Lean.Parser.Term.hole, `Lean.Parser.Term.bracketedBinder] :=
+        ⟨lemmaBindersRaw.toList.map TSyntax.mk⟩
+      let ctorSuffix := ctor.declName.replacePrefix view.declName .anonymous
+      let lemmaName := Name.mkStr view.declName
+        s!"{field.fieldId.toString}_{ctorSuffix.toStringWithSep "_" true}"
+      let lemmaId := mkIdent lemmaName
+      let simpField : TSyntax ``Lean.Parser.Tactic.simpLemma := TSyntax.mk fieldName.raw
+      let simpCtor : TSyntax ``Lean.Parser.Tactic.simpLemma := TSyntax.mk ctorId.raw
+      let simpRecId : TSyntax ``Lean.Parser.Tactic.simpLemma := TSyntax.mk recId.raw
+      let simpRec : TSyntax ``Lean.Parser.Tactic.simpLemma :=
+        TSyntax.mk (mkIdent ``_root_.MvQPF.Fix.rec_eq).raw
+      let simpLemmas : TSyntaxArray ``Lean.Parser.Tactic.simpLemma :=
+        #[simpField, simpRecId, simpCtor, simpRec]
+      elabCommandAndTrace <|← `(
+        @[simp] theorem $lemmaId:ident $lemmaBinders* : $stmt := by
+          simp [$simpLemmas,*]
+      )
+
 open Macro Comp in
 /--
   Top-level elaboration for both `data` and `codata` declarations
@@ -757,6 +877,8 @@ def elabData : CommandElab := fun stx =>
     catch e =>
       trace[QPF] m!"Failed to generate corecursor.\
         \n\n{e.toMessageData}"
+
+  mkComputedFields view
 
 /-
 ## Mutual Blocks (data/codata) - DISABLED for Lean 4.27.0-rc1 compatibility

@@ -83,6 +83,14 @@ structure DeadBinderInfo where
   universeNames : List Name
   deriving Inhabited
 
+structure QpfComputedFieldView where
+  ref       : Syntax
+  modifiers : Modifiers
+  fieldId   : Name
+  type      : Syntax.Term
+  matchAlts : TSyntax ``Parser.Term.matchAlts
+  deriving Inhabited
+
 structure DataView where
   ref             : Syntax
   declId          : TSyntax ``declId
@@ -105,6 +113,8 @@ structure DataView where
   deadBinderNames : Array Ident
   /-- Dead binder metadata, including syntactic universe usage. -/
   deadBinderInfos : Array DeadBinderInfo
+  /-- Computed field declarations attached to this data/codata definition. -/
+  computedFields  : Array QpfComputedFieldView
     deriving Inhabited
 
 namespace DataView
@@ -386,7 +396,17 @@ def dataSyntaxToView (modifiers : Modifiers) (decl : Syntax) : CommandElabM Data
     if let some (doc, _) := ctorModifiers.docString? then
       liftTermElabM <| addDocString ctorName ctorBinders doc
     return { ref := ctor, declId := ctor[3], modifiers := ctorModifiers, declName := ctorName, binders := ctorBinders, type? := type? : CtorView }
-  let classes ← liftCoreM <| getOptDerivingClasses decl[5]
+  let computedFields ← (decl[5].getOptional?.map (·[1].getArgs) |>.getD #[]).mapM fun cf => withRef cf do
+    let modifiers ← elabModifiers ⟨cf[0]⟩
+    let modifiers := { modifiers with computeKind := .noncomputable }
+    return {
+      ref := cf
+      modifiers
+      fieldId := cf[1].getId
+      type := ⟨cf[3]⟩
+      matchAlts := ⟨cf[4]⟩
+    }
+  let classes ← liftCoreM <| getOptDerivingClasses decl[6]
 
 
   let command ← DataCommand.fromSyntax decl[0]
@@ -406,6 +426,7 @@ def dataSyntaxToView (modifiers : Modifiers) (decl : Syntax) : CommandElabM Data
     binders, type?, ctors,
     explicitUniverse? := none
     command, liveBinders, deadBinders, deadBinderNames, deadBinderInfos
+    computedFields
   }
   withQPFTraceNode "elaborated view …" <| do
     trace[QPF] m!"{view}"
