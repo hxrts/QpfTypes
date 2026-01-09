@@ -10,6 +10,7 @@ import Test.CodataCorec
 import Test.CardPFunctor
 import Test.CoinductionProtocol
 import Test.EquivUTTAbstract
+import Test.ComputedFields
 import Test.List
 import Test.Misc
 import Test.MutualInductiveSpec

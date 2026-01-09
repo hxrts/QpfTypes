@@ -689,8 +689,23 @@ def mkComputedFields (view : DataView) : CommandElabM Unit :=
   let bindersRaw := view.deadBinders.raw ++ liveBinders
   let binders : TSyntaxArray [`ident, `Lean.Parser.Term.hole, `Lean.Parser.Term.bracketedBinder] :=
     ⟨bindersRaw.toList.map TSyntax.mk⟩
+  let deadBinderTerms : Array Term := view.deadBinderNames.map fun n => (n : Term)
+  let liveBinderTerms : Array Term := liveBinders.map TSyntax.mk
+  let allBinderTerms : Array Term := deadBinderTerms ++ liveBinderTerms
   let recType := view.getExpectedType
   let recId := mkIdent (view.shortDeclName ++ `rec)
+  let shapeEquivId := mkIdent (view.declName ++ `Shape ++ `equiv)
+  let shapeFunctorId := mkIdent (view.declName ++ `Shape ++ `functor)
+  let shapePId := mkIdent (view.declName ++ `Shape ++ `P)
+  let shapeChildTId := mkIdent (view.declName ++ `Shape ++ `ChildT)
+  let shapeHeadTId := mkIdent (view.declName ++ `Shape ++ `HeadT)
+  let shapeId := mkIdent (view.declName ++ `Shape)
+
+  let mkTypeVec (terms : Array Term) : CommandElabM Term := do
+    let mut acc : Term ← `(!![])
+    for term in terms do
+      acc ← `((TypeVec.append1 $acc $term))
+    pure acc
 
   let rec stripParens : Syntax → Syntax
     | Syntax.node _ ``Lean.Parser.Term.paren #[_, inner, _] => stripParens inner
@@ -756,40 +771,102 @@ def mkComputedFields (view : DataView) : CommandElabM Unit :=
         "Computed field has {alts.size} clauses, but expected {view.ctors.size}"
     let caseFuns ← (Array.zip view.ctors alts).mapM fun ⟨ctor, alt⟩ =>
       mkCaseFun ctor alt field
+    let recApp : Term ←
+      `($recId:ident)
     elabCommandAndTrace <|← `(
       $(quote modifiers):declModifiers
       def $fieldName:ident $binders* : $fullType :=
-        $recId (motive := $(field.type)) $caseFuns:term*
+        $recApp $caseFuns:term*
     )
-    for ctor in view.ctors do
-      let (ctorBinders, ctorBinderNames) ←
-        Macro.mkFreshNamesForBinderHoles ctor.binders.getArgs
+    let fieldMapHead : Term ←
+      `($recApp:term $caseFuns:term*)
+    for (idx, ctor) in Array.enum view.ctors do
       let ctorId := mkIdent ctor.declName
-      let argTerms : Array Term := ctorBinderNames.map (fun n => (n : Term))
-      let ctorApp : Term ←
-        if argTerms.isEmpty then
+      let forms := RecursionForm.extract ctor recType |>.toArray
+      let argTypes : Array Term := forms.map (RecursionForm.toTerm recType)
+      let args ← argTypes.mapM fun ty => do
+        let name ← Elab.Term.mkFreshBinderName
+        let ident := mkIdent name
+        let binder : TSyntax ``Parser.Term.bracketedBinder ← `(bb | ($ident:ident : $ty))
+        pure (ident, binder)
+      let argTerms : Array Term := args.map (fun x => (x.1 : Term))
+      let ctorHead : Term ←
+        if allBinderTerms.isEmpty then
           `($ctorId:ident)
         else
-          `(@$ctorId:ident $argTerms:term*)
-      let lhs : Term ← `($fieldName:ident $ctorApp:term)
-      let stmt : Term ← `($lhs:term = _)
-      let lemmaBindersRaw := bindersRaw ++ ctorBinders.raw
+          `(@$ctorId:ident $allBinderTerms:term*)
+      let ctorApp : Term ←
+        argTerms.foldlM (fun acc arg => `($acc $arg)) ctorHead
+      let fieldHead : Term ←
+        if allBinderTerms.isEmpty then
+          `($fieldName:ident)
+        else
+          `(@$fieldName:ident $allBinderTerms:term*)
+      let lhs : Term ← `($fieldHead:term $ctorApp:term)
+      let caseFun := caseFuns[idx]!
+      let rhsArgs ← (Array.zip forms argTerms).mapM fun ⟨form, arg⟩ => do
+        match form with
+        | RecursionForm.directRec => `($fieldHead:term $arg)
+        | RecursionForm.nonRec _ | RecursionForm.composed _ => pure arg
+      let rhs : Term ← rhsArgs.foldlM (fun acc arg => `($acc $arg)) caseFun
+      let stmt : Term ← `($lhs:term = $rhs:term)
+      let shapeCtorName :=
+        ctor.declName.replacePrefix view.declName (view.declName ++ `Shape)
+      let shapeCtorId := mkIdent shapeCtorName
+      let shapeParamsIn : Array Term := allBinderTerms.push recType
+      let shapeParamsOut : Array Term := allBinderTerms.push field.type
+      let shapeCtorHeadIn : Term ←
+        if shapeParamsIn.isEmpty then
+          `($shapeCtorId:ident)
+        else
+          `(@$shapeCtorId:ident $shapeParamsIn:term*)
+      let shapeCtorHeadOut : Term ←
+        if shapeParamsOut.isEmpty then
+          `($shapeCtorId:ident)
+        else
+          `(@$shapeCtorId:ident $shapeParamsOut:term*)
+      let shapeCtorApp : Term ←
+        argTerms.foldlM (fun acc arg => `($acc $arg)) shapeCtorHeadIn
+      let shapeMapArgs ← (Array.zip forms argTerms).mapM fun ⟨form, arg⟩ => do
+        match form with
+        | RecursionForm.directRec => `($fieldMapHead:term $arg)
+        | RecursionForm.nonRec _ | RecursionForm.composed _ => pure arg
+      let shapeMappedApp : Term ←
+        shapeMapArgs.foldlM (fun acc arg => `($acc $arg)) shapeCtorHeadOut
+      let shapeBase : Term ←
+        if deadBinderTerms.isEmpty then
+          `($shapeId:ident)
+        else
+          `(@$shapeId:ident $deadBinderTerms:term*)
+      let shapeVecIn ← mkTypeVec (liveBinderTerms.push recType)
+      let shapeVecOut ← mkTypeVec (liveBinderTerms.push field.type)
+      let shapeCtorAppUncurried : Term ←
+        `(show (TypeFun.ofCurried $shapeBase $shapeVecIn) from $shapeCtorApp)
+      let shapeMappedAppUncurried : Term ←
+        `(show (TypeFun.ofCurried $shapeBase $shapeVecOut) from $shapeMappedApp)
+      let mapFn : Term ←
+        `((TypeVec.appendFun TypeVec.id $fieldMapHead))
+      let mapStmt : Term ←
+        `(MvFunctor.map $mapFn $shapeCtorAppUncurried = $shapeMappedAppUncurried)
+      let argBindersRaw := args.map (fun x => x.2.raw)
+      let lemmaBindersRaw := bindersRaw ++ argBindersRaw
       let lemmaBinders : TSyntaxArray [`ident, `Lean.Parser.Term.hole, `Lean.Parser.Term.bracketedBinder] :=
         ⟨lemmaBindersRaw.toList.map TSyntax.mk⟩
       let ctorSuffix := ctor.declName.replacePrefix view.declName .anonymous
       let lemmaName := Name.mkStr view.declName
         s!"{field.fieldId.toString}_{ctorSuffix.toStringWithSep "_" true}"
       let lemmaId := mkIdent lemmaName
-      let simpField : TSyntax ``Lean.Parser.Tactic.simpLemma := TSyntax.mk fieldName.raw
-      let simpCtor : TSyntax ``Lean.Parser.Tactic.simpLemma := TSyntax.mk ctorId.raw
-      let simpRecId : TSyntax ``Lean.Parser.Tactic.simpLemma := TSyntax.mk recId.raw
-      let simpRec : TSyntax ``Lean.Parser.Tactic.simpLemma :=
-        TSyntax.mk (mkIdent ``_root_.MvQPF.Fix.rec_eq).raw
-      let simpLemmas : TSyntaxArray ``Lean.Parser.Tactic.simpLemma :=
-        #[simpField, simpRecId, simpCtor, simpRec]
       elabCommandAndTrace <|← `(
         @[simp] theorem $lemmaId:ident $lemmaBinders* : $stmt := by
-          simp [$simpLemmas,*]
+          have hmap : $mapStmt := by
+            change $(shapeFunctorId).map $mapFn $shapeCtorAppUncurried = $shapeMappedAppUncurried
+            rfl
+          simp [$(recId):ident] at hmap
+          simp [$(fieldName):ident, $(recId):ident, $(ctorId):ident,
+            $(mkIdent ``_root_.MvQPF.Fix.rec_eq):ident]
+          first
+            | simpa [hmap]
+            | rfl
       )
 
 open Macro Comp in

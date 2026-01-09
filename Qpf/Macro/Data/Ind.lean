@@ -252,7 +252,7 @@ def genRecursors (view : DataView) : CommandElabM Unit :=
     mkRecursorBinder (rec_type) name base true
 
   elabCommandAndTrace (header := "elaborating induction principle …") <|← `(
-    @[elab_as_elim, induction_eliminator]
+    @[induction_eliminator]
     def $(view.shortDeclName ++ `ind |> mkIdent):ident
       { motive : $rec_type → Prop}
       $ih_types*
@@ -263,7 +263,6 @@ def genRecursors (view : DataView) : CommandElabM Unit :=
         (match ·,· with $(← generateIndBody mapped true)))
 
   elabCommandAndTrace (header := "elaborating recursor …") <|← `(
-    @[elab_as_elim]
     def $(view.shortDeclName ++ `rec |> mkIdent):ident
       { motive : Type _ }
       $ih_types_const*
@@ -272,7 +271,6 @@ def genRecursors (view : DataView) : CommandElabM Unit :=
         (match · with $(← generateRecBodyConst mapped)))
 
   elabCommandAndTrace (header := "elaborating dependent recursor …") <|← `(
-    @[elab_as_elim]
     def $(view.shortDeclName ++ `drec |> mkIdent):ident
       { motive : $rec_type → $motiveSort}
       $ih_types*
@@ -281,20 +279,19 @@ def genRecursors (view : DataView) : CommandElabM Unit :=
         (match · with $(← generateRecBody mapped true)))
 
   elabCommandAndTrace (header := "elaborating recOn …") <|← `(
-    @[elab_as_elim]
     def $(view.shortDeclName ++ `recOn |> mkIdent):ident
       (val : $rec_type)
       { motive : $rec_type → $motiveSort}
       $ih_types*
       : motive val
-    := $(mkIdent (view.shortDeclName ++ `drec)) (motive := motive) $caseNames:ident* val
+    := $(mkIdent (view.shortDeclName ++ `drec)) $caseNames:ident* val
   )
 
   let casesOnTypes ← mapped.mapM fun ⟨name, base⟩ =>
     mkRecursorBinder (rec_type) (name) base false
 
   elabCommandAndTrace (header := "elaborating casesOn (Prop) eliminator …") <|← `(
-    @[elab_as_elim, cases_eliminator]
+    @[cases_eliminator]
     def $(view.shortDeclName ++ `cases |> mkIdent):ident
       { motive : $rec_type → Prop}
       $casesOnTypes*
@@ -304,7 +301,6 @@ def genRecursors (view : DataView) : CommandElabM Unit :=
         (match ·,· with $(← generateIndBody mapped false)))
 
   elabCommandAndTrace (header := "elaborating casesOn (Type _) eliminator …") <|← `(
-    @[elab_as_elim]
     def $(view.shortDeclName ++ `casesType |> mkIdent):ident
       { motive : $rec_type → $motiveSort}
       $casesOnTypes*
@@ -313,11 +309,11 @@ def genRecursors (view : DataView) : CommandElabM Unit :=
         (match · with $(← generateRecBody mapped false)))
 
   elabCommandAndTrace (header := "elaborating casesOn …") <|← `(
-    @[elab_as_elim, cases_eliminator]
+    @[cases_eliminator]
     def $(view.shortDeclName ++ `casesOn |> mkIdent):ident
       (val : $rec_type)
       { motive : $rec_type → Prop}
       $casesOnTypes*
       : motive val
-    := $(mkIdent (view.shortDeclName ++ `cases)) (motive := motive) $caseNames:ident* val
+    := $(mkIdent (view.shortDeclName ++ `cases)) $caseNames:ident* val
   )
