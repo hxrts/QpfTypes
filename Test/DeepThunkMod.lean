@@ -1,6 +1,6 @@
 import Qpf
 import Qpf.Builtins.List
-import Qpf.Qpf.Multivariate.Constructions.DeepThunk
+import Qpf.Qpf.Multivariate.DeepThunk
 
 open MvQPF
 open MvQPF.List

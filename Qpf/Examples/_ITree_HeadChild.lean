@@ -1,5 +1,5 @@
 import Qpf
-import Qpf.Util.MvQPF.Patterns
+import Qpf.Util.Patterns
 
 /-!
 # ITree Base Functor Pattern
