@@ -7,7 +7,11 @@ import Qpf.Macro.Data.Constructors
 import Qpf.Macro.Data.Replace
 import Qpf.Macro.Data.Count
 import Qpf.Macro.Data.View
+import Qpf.Macro.Data.Parse
+import Qpf.Macro.Data.Validate
 import Qpf.Macro.Data.Ind
+import Qpf.Macro.Data.Universe
+import Qpf.Macro.Data.ComputedFields
 import Qpf.Macro.Common
 import Qpf.Macro.Comp
 
@@ -18,54 +22,12 @@ open Parser.Tactic
 open PrettyPrinter (delab)
 
 open Macro (withQPFTraceNode elabCommandAndTrace)
+open Qpf.Macro.Data.Universe (getUniverseDepsLevel getUniverseDeps computeResultUniverse)
+open Qpf.Macro.Data.Parse (dataSyntaxToView)
+open Qpf.Macro.Data.ComputedFields (mkComputedFields)
 
 private def Array.enum (as : Array α) : Array (Nat × α) :=
   (Array.range as.size).zip as
-
-/-! ## Universe utilities -/
-
-private def getUniverseDepsLevel : Level → List Name
-  | .zero => []
-  | .succ l => getUniverseDepsLevel l
-  | .max l1 l2 => getUniverseDepsLevel l1 ++ getUniverseDepsLevel l2
-  | .imax l1 l2 => getUniverseDepsLevel l1 ++ getUniverseDepsLevel l2
-  | .param n => [n]
-  | .mvar _ => []
-
-private def getUniverseDeps (e : Expr) : MetaM (List Name) := do
-  let rec visit (e : Expr) : MetaM (List Name) := do
-    match e with
-    | .sort l => pure (getUniverseDepsLevel l)
-    | .forallE _ t b _ => do
-        let dt ← visit t
-        let db ← visit b
-        pure (dt ++ db)
-    | .app f a => do
-        let df ← visit f
-        let da ← visit a
-        pure (df ++ da)
-    | .lam _ t b _ => do
-        let dt ← visit t
-        let db ← visit b
-        pure (dt ++ db)
-    | .const _ ls => pure (ls.foldl (fun acc l => acc ++ getUniverseDepsLevel l) [])
-    | .letE _ t v b _ => do
-        let dt ← visit t
-        let dv ← visit v
-        let db ← visit b
-        pure (dt ++ dv ++ db)
-    | .mdata _ e => visit e
-    | .proj _ _ e => visit e
-    | _ => pure []
-  visit e
-
-private def computeResultUniverse (usedUnivs : List Name) (explicit? : Option Level) : Level :=
-  match explicit? with
-  | some u => u
-  | none =>
-      match usedUnivs with
-      | [] => .zero
-      | u :: us => us.foldl (fun acc n => .max acc (.param n)) (.param u)
 
 /--
   Given a natural number `n`, produce a sequence of `n` calls of `.fs`, ending in `.fz`.
@@ -673,201 +635,6 @@ def mkType (view : DataView) (base : Term × Term) : CommandElabM Unit :=
       abbrev $(view.declId) $view.deadBinders:bracketedBinder* :=
         TypeFun.curried $uncurriedApplied
   )
-
-def mkComputedFields (view : DataView) : CommandElabM Unit :=
-  withQPFTraceNode m!"defining computed fields for {view.declId}" (tag := "mkComputedFields") <| do
-  if view.computedFields.isEmpty then
-    return
-  if view.command == .Codata then
-    throwErrorAt view.ref "Computed fields are not supported for `codata` yet"
-
-  let liveBinders := view.liveBinders.raw.map fun stx =>
-    if stx.getKind == ``Parser.Term.binderIdent then
-      stx[0]
-    else
-      stx
-  let bindersRaw := view.deadBinders.raw ++ liveBinders
-  let binders : TSyntaxArray [`ident, `Lean.Parser.Term.hole, `Lean.Parser.Term.bracketedBinder] :=
-    ⟨bindersRaw.toList.map TSyntax.mk⟩
-  let deadBinderTerms : Array Term := view.deadBinderNames.map fun n => (n : Term)
-  let liveBinderTerms : Array Term := liveBinders.map TSyntax.mk
-  let allBinderTerms : Array Term := deadBinderTerms ++ liveBinderTerms
-  let recType := view.getExpectedType
-  let recId := mkIdent (view.shortDeclName ++ `rec)
-  let shapeEquivId := mkIdent (view.declName ++ `Shape ++ `equiv)
-  let shapeFunctorId := mkIdent (view.declName ++ `Shape ++ `functor)
-  let shapePId := mkIdent (view.declName ++ `Shape ++ `P)
-  let shapeChildTId := mkIdent (view.declName ++ `Shape ++ `ChildT)
-  let shapeHeadTId := mkIdent (view.declName ++ `Shape ++ `HeadT)
-  let shapeId := mkIdent (view.declName ++ `Shape)
-
-  let mkTypeVec (terms : Array Term) : CommandElabM Term := do
-    let mut acc : Term ← `(!![])
-    for term in terms do
-      acc ← `((TypeVec.append1 $acc $term))
-    pure acc
-
-  let rec stripParens : Syntax → Syntax
-    | Syntax.node _ ``Lean.Parser.Term.paren #[_, inner, _] => stripParens inner
-    | stx => stx
-
-  let rec collectAppArgs : Syntax → Array Syntax
-    | Syntax.node _ ``Lean.Parser.Term.app args =>
-        if h : 0 < args.size then
-          let fn := args[0]
-          let rest :=
-            if h1 : 1 < args.size then
-              if args.size == 2 && args[1].getKind == nullKind then
-                args[1].getArgs
-              else
-                args.extract 1 args.size
-            else
-              #[]
-          collectAppArgs fn ++ rest
-        else
-          #[]
-    | stx => #[]
-
-  let mkCaseFun (ctor : CtorView) (alt : Syntax) (field : QpfComputedFieldView) : CommandElabM Term := do
-    let (pat, rhs) ←
-      match alt with
-      | `(matchAltExpr| | $pat:term => $rhs:term) => pure (pat, rhs)
-      | _ => throwErrorAt alt "Unsupported computed field clause; expected `| <ctor> ... => ...`"
-    -- Keep parsing strict; errors mention the exact clause that failed.
-    let pat := stripParens pat
-    let args := collectAppArgs pat
-    let forms := RecursionForm.extract ctor recType |>.toArray
-    if args.size != forms.size then
-      throwErrorAt pat
-        "Constructor pattern has {args.size} arguments, but expected {forms.size}"
-    let mut argNames : Array Ident := #[]
-    for arg in args do
-      if arg.getKind == identKind then
-        argNames := argNames.push ⟨arg⟩
-      else if arg.getKind == ``Lean.Parser.Term.hole then
-        argNames := argNames.push (mkIdentFrom arg (← Elab.Term.mkFreshBinderName))
-      else
-        throwErrorAt arg "Computed field patterns must use identifiers or `_`"
-
-    let mut lam := rhs
-    let pairs := (Array.zip argNames forms).toList.reverse
-    for ⟨name, form⟩ in pairs do
-      let argTy : Term := match form with
-        | RecursionForm.nonRec stx | RecursionForm.composed stx => stx
-        | RecursionForm.directRec => field.type
-      lam ← `(fun ($name:ident : $argTy) => $lam)
-    return lam
-
-  for field in view.computedFields do
-    let fieldName := mkIdent (view.declName ++ field.fieldId)
-    let fullType : Term ← `($recType:term → $(field.type):term)
-    let modifiers := { field.modifiers with computeKind := .noncomputable }
-    let alts ←
-      match field.matchAlts with
-      | `(matchAlts| $alts:matchAlt*) => pure alts.raw
-      | _ => throwErrorAt field.ref "Failed to parse computed field clauses"
-    if alts.size != view.ctors.size then
-      throwErrorAt field.ref
-        "Computed field has {alts.size} clauses, but expected {view.ctors.size}"
-    let caseFuns ← (Array.zip view.ctors alts).mapM fun ⟨ctor, alt⟩ =>
-      mkCaseFun ctor alt field
-    let recApp : Term ←
-      `($recId:ident)
-    elabCommandAndTrace <|← `(
-      $(quote modifiers):declModifiers
-      def $fieldName:ident $binders* : $fullType :=
-        $recApp $caseFuns:term*
-    )
-    let fieldMapHead : Term ←
-      `($recApp:term $caseFuns:term*)
-    for (idx, ctor) in Array.enum view.ctors do
-      let ctorId := mkIdent ctor.declName
-      let forms := RecursionForm.extract ctor recType |>.toArray
-      let argTypes : Array Term := forms.map (RecursionForm.toTerm recType)
-      let args ← argTypes.mapM fun ty => do
-        let name ← Elab.Term.mkFreshBinderName
-        let ident := mkIdent name
-        let binder : TSyntax ``Parser.Term.bracketedBinder ← `(bb | ($ident:ident : $ty))
-        pure (ident, binder)
-      let argTerms : Array Term := args.map (fun x => (x.1 : Term))
-      let ctorHead : Term ←
-        if allBinderTerms.isEmpty then
-          `($ctorId:ident)
-        else
-          `(@$ctorId:ident $allBinderTerms:term*)
-      let ctorApp : Term ←
-        argTerms.foldlM (fun acc arg => `($acc $arg)) ctorHead
-      let fieldHead : Term ←
-        if allBinderTerms.isEmpty then
-          `($fieldName:ident)
-        else
-          `(@$fieldName:ident $allBinderTerms:term*)
-      let lhs : Term ← `($fieldHead:term $ctorApp:term)
-      let caseFun := caseFuns[idx]!
-      let rhsArgs ← (Array.zip forms argTerms).mapM fun ⟨form, arg⟩ => do
-        match form with
-        | RecursionForm.directRec => `($fieldHead:term $arg)
-        | RecursionForm.nonRec _ | RecursionForm.composed _ => pure arg
-      let rhs : Term ← rhsArgs.foldlM (fun acc arg => `($acc $arg)) caseFun
-      let stmt : Term ← `($lhs:term = $rhs:term)
-      let shapeCtorName :=
-        ctor.declName.replacePrefix view.declName (view.declName ++ `Shape)
-      let shapeCtorId := mkIdent shapeCtorName
-      let shapeParamsIn : Array Term := allBinderTerms.push recType
-      let shapeParamsOut : Array Term := allBinderTerms.push field.type
-      let shapeCtorHeadIn : Term ←
-        if shapeParamsIn.isEmpty then
-          `($shapeCtorId:ident)
-        else
-          `(@$shapeCtorId:ident $shapeParamsIn:term*)
-      let shapeCtorHeadOut : Term ←
-        if shapeParamsOut.isEmpty then
-          `($shapeCtorId:ident)
-        else
-          `(@$shapeCtorId:ident $shapeParamsOut:term*)
-      let shapeCtorApp : Term ←
-        argTerms.foldlM (fun acc arg => `($acc $arg)) shapeCtorHeadIn
-      let shapeMapArgs ← (Array.zip forms argTerms).mapM fun ⟨form, arg⟩ => do
-        match form with
-        | RecursionForm.directRec => `($fieldMapHead:term $arg)
-        | RecursionForm.nonRec _ | RecursionForm.composed _ => pure arg
-      let shapeMappedApp : Term ←
-        shapeMapArgs.foldlM (fun acc arg => `($acc $arg)) shapeCtorHeadOut
-      let shapeBase : Term ←
-        if deadBinderTerms.isEmpty then
-          `($shapeId:ident)
-        else
-          `(@$shapeId:ident $deadBinderTerms:term*)
-      let shapeVecIn ← mkTypeVec (liveBinderTerms.push recType)
-      let shapeVecOut ← mkTypeVec (liveBinderTerms.push field.type)
-      let shapeCtorAppUncurried : Term ←
-        `(show (TypeFun.ofCurried $shapeBase $shapeVecIn) from $shapeCtorApp)
-      let shapeMappedAppUncurried : Term ←
-        `(show (TypeFun.ofCurried $shapeBase $shapeVecOut) from $shapeMappedApp)
-      let mapFn : Term ←
-        `((TypeVec.appendFun TypeVec.id $fieldMapHead))
-      let mapStmt : Term ←
-        `(MvFunctor.map $mapFn $shapeCtorAppUncurried = $shapeMappedAppUncurried)
-      let argBindersRaw := args.map (fun x => x.2.raw)
-      let lemmaBindersRaw := bindersRaw ++ argBindersRaw
-      let lemmaBinders : TSyntaxArray [`ident, `Lean.Parser.Term.hole, `Lean.Parser.Term.bracketedBinder] :=
-        ⟨lemmaBindersRaw.toList.map TSyntax.mk⟩
-      let ctorSuffix := ctor.declName.replacePrefix view.declName .anonymous
-      let lemmaName := Name.mkStr view.declName
-        s!"{field.fieldId.toString}_{ctorSuffix.toStringWithSep "_" true}"
-      let lemmaId := mkIdent lemmaName
-      elabCommandAndTrace <|← `(
-        @[simp] theorem $lemmaId:ident $lemmaBinders* : $stmt := by
-          have hmap : $mapStmt := by
-            change $(shapeFunctorId).map $mapFn $shapeCtorAppUncurried = $shapeMappedAppUncurried
-            rfl
-          simp [$(recId):ident] at hmap
-          simp [$(fieldName):ident, $(recId):ident, $(ctorId):ident,
-            $(mkIdent ``_root_.MvQPF.Fix.rec_eq):ident]
-          first
-            | simpa [hmap]
-            | rfl
-      )
 
 open Macro Comp in
 /--
